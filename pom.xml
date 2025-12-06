@@ -1,0 +1,131 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.dccio</groupId>
+  <artifactId>dcc-io-daemon</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+
+  <properties>
+    <!-- Path to JMRI installation - can be either:
+         - Pre-built JMRI directory with jmri.jar (e.g., ../JMRI)
+         - Or JMRI source directory (e.g., ../JMRI-5.12) -->
+    <jmri.home>${project.basedir}/../JMRI</jmri.home>
+    <jmri.jar>${jmri.home}/jmri.jar</jmri.jar>
+    <jmri.classes>${jmri.home}/../JMRI-5.12/java/build/classes</jmri.classes>
+    <jmri.lib>${jmri.home}/lib</jmri.lib>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+  </properties>
+
+  <dependencies>
+    <!-- 
+      JMRI is not available in Maven Central. You have two options:
+      
+      1. Build JMRI first and create a JAR, then install it to local Maven repo:
+         cd ${jmri.home} && ant
+         jar -cf jmri.jar -C java/build/classes .
+         mvn install:install-file -Dfile=jmri.jar -DgroupId=org.jmri -DartifactId=jmri -Dversion=5.12.0 -Dpackaging=jar
+      
+      2. Use system scope (requires manual classpath setup at runtime):
+         Uncomment the system dependency below and ensure JMRI classes are on classpath
+    -->
+    
+    <!-- Option 1: Use pre-built jmri.jar (if available) -->
+    <dependency>
+      <groupId>org.jmri</groupId>
+      <artifactId>jmri</artifactId>
+      <version>5.12.0</version>
+      <scope>system</scope>
+      <systemPath>${jmri.jar}</systemPath>
+    </dependency>
+    
+    <!-- Alternative: If you've installed JMRI to local Maven repo, uncomment this: -->
+    <!--
+    <dependency>
+      <groupId>org.jmri</groupId>
+      <artifactId>jmri</artifactId>
+      <version>5.12.0</version>
+    </dependency>
+    -->
+    
+    <!-- Option 2: System scope (for development - not recommended for packaging) -->
+    <!-- Note: This won't work with assembly plugin, you'll need to manually add JMRI to classpath -->
+    <!--
+    <dependency>
+      <groupId>org.jmri</groupId>
+      <artifactId>jmri</artifactId>
+      <version>5.12.0</version>
+      <scope>system</scope>
+      <systemPath>${jmri.classes}</systemPath>
+    </dependency>
+    -->
+    
+    <!-- Essential JMRI runtime dependencies from lib/ -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.7</version>
+      <scope>system</scope>
+      <systemPath>${jmri.lib}/slf4j-api-2.0.7.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>2.20.0</version>
+      <scope>system</scope>
+      <systemPath>${jmri.lib}/log4j-core-2.20.0.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.20.0</version>
+      <scope>system</scope>
+      <systemPath>${jmri.lib}/log4j-api-2.20.0.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-slf4j2-impl</artifactId>
+      <version>2.20.0</version>
+      <scope>system</scope>
+      <systemPath>${jmri.lib}/log4j-slf4j2-impl-2.20.0.jar</systemPath>
+    </dependency>
+    
+    <!-- Gson for JSON parsing -->
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.10.1</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Optional: build a runnable jar with dependencies -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <descriptorRefs>
+            <descriptorRef>jar-with-dependencies</descriptorRef>
+          </descriptorRefs>
+          <archive>
+            <manifest>
+              <mainClass>org.dccio.daemon.DccIoDaemon</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>single</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

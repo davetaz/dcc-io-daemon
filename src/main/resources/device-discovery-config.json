@@ -1,0 +1,121 @@
+{
+  "devices": [
+    {
+      "name": "Hornby Elite",
+      "vendorId": "0x04d8",
+      "productId": "0x000a",
+      "systemType": "xnet-elite",
+      "defaultPort": null,
+      "config": {
+        "baudRate": "19200",
+        "flowControl": "none"
+      },
+      "descriptionPatterns": ["lenz", "xpressnet", "elite"]
+    },
+    {
+      "name": "LENZ USB",
+      "vendorId": "0x04d8",
+      "productId": "0x0721",
+      "systemType": "xnet-lenz-usb",
+      "defaultPort": null,
+      "config": {
+        "baudRate": "9600",
+        "flowControl": "none"
+      },
+      "descriptionPatterns": ["lenz", "xpressnet"]
+    },
+    {
+      "name": "MERG USB",
+      "vendorId": "0x04d8",
+      "productId": "0xf80c",
+      "systemType": "merg-usb",
+      "defaultPort": null,
+      "config": {
+        "baudRate": "57600"
+      },
+      "descriptionPatterns": ["merg"]
+    },
+    {
+      "name": "NCE USB",
+      "vendorId": "0x10c4",
+      "productId": "0xea60",
+      "systemType": "nce-usb",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["nce"]
+    },
+    {
+      "name": "NCE Serial",
+      "vendorId": "0x0403",
+      "productId": "0x6015",
+      "systemType": "nce-serial",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["nce"]
+    },
+    {
+      "name": "NCE Serial (Prolific)",
+      "vendorId": "0x067b",
+      "productId": "0x2303",
+      "systemType": "nce-serial",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["nce"]
+    },
+    {
+      "name": "DCC++ (Arduino)",
+      "vendorId": "0x2341",
+      "productId": "0x0042",
+      "systemType": "dccpp-ethernet",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["dcc++", "dccpp", "arduino"]
+    },
+    {
+      "name": "DCC++ (Arduino Leonardo)",
+      "vendorId": "0x2341",
+      "productId": "0x0043",
+      "systemType": "dccpp-ethernet",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["dcc++", "dccpp", "arduino"]
+    },
+    {
+      "name": "DCC++ (ttyUSB0)",
+      "vendorId": "0x1a86",
+      "productId": "0x7523",
+      "systemType": "dccpp-ethernet",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["dcc++", "dccpp"]
+    },
+    {
+      "name": "SPROG IIv3",
+      "vendorId": "0x04d8",
+      "productId": "0xf91c",
+      "systemType": "sprog",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["sprog"]
+    },
+    {
+      "name": "SPROG 3",
+      "vendorId": "0x04d8",
+      "productId": "0xfbb3",
+      "systemType": "sprog",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["sprog"]
+    },
+    {
+      "name": "LocoBuffer-USB",
+      "vendorId": "0x0403",
+      "productId": "0x6001",
+      "systemType": "locobuffer-usb",
+      "defaultPort": null,
+      "config": {},
+      "descriptionPatterns": ["locobuffer"]
+    }
+  ]
+}
+

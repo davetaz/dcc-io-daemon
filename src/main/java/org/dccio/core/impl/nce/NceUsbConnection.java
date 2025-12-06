@@ -1,0 +1,208 @@
+package org.dccio.core.impl.nce;
+
+import org.dccio.core.AccessoryController;
+import org.dccio.core.ProgrammerSession;
+import org.dccio.core.SystemConfig;
+import org.dccio.core.ThrottleSession;
+import org.dccio.core.events.DccEvent;
+import org.dccio.core.events.DccEventBus;
+import org.dccio.core.events.DccEventType;
+import org.dccio.core.impl.common.BaseCommandStationConnection;
+import org.dccio.core.impl.common.JmriAccessoryController;
+import org.dccio.core.impl.common.JmriProgrammerSession;
+import org.dccio.core.impl.common.JmriThrottleSession;
+
+import jmri.DccThrottle;
+import jmri.GlobalProgrammerManager;
+import jmri.InstanceManager;
+import jmri.PowerManager;
+import jmri.ThrottleListener;
+import jmri.ThrottleManager;
+import jmri.TurnoutManager;
+import jmri.jmrix.SystemConnectionMemoManager;
+import jmri.jmrix.nce.NceSystemConnectionMemo;
+import jmri.jmrix.nce.NceTrafficController;
+import jmri.jmrix.nce.usbdriver.UsbDriverAdapter;
+
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * CommandStationConnection for NCE PowerCab over USB, backed by JMRI NCE stack.
+ */
+public final class NceUsbConnection extends BaseCommandStationConnection {
+
+    private final UsbDriverAdapter adapter;
+    private final NceSystemConnectionMemo memo;
+
+    private JmriAccessoryController accessoryController;
+    private JmriProgrammerSession programmerSession;
+
+    private final PropertyChangeListener powerListener = this::onPowerChange;
+
+    public NceUsbConnection(SystemConfig config, DccEventBus eventBus) {
+        super(config, eventBus);
+        this.memo = new NceSystemConnectionMemo();
+        this.adapter = new UsbDriverAdapter();
+        this.adapter.setSystemConnectionMemo(memo);
+        memo.setUserName(config.getUserName());
+        memo.setSystemPrefix(config.getSystemPrefix());
+        SystemConnectionMemoManager.getDefault().register(memo);
+    }
+
+    @Override
+    public void connect() throws IOException {
+        if (connected) {
+            return;
+        }
+        String portName = config.getOption("portName");
+        if (portName == null) {
+            throw new IOException("Missing 'portName' option for NCE USB connection");
+        }
+        String error = adapter.openPort(portName, "dcc-io-daemon");
+        if (error != null) {
+            throw new IOException("Failed to open NCE USB port: " + error);
+        }
+        adapter.configure();
+        connected = true;
+        attachManagersAndListeners();
+        publishConnectionState();
+    }
+
+    private void attachManagersAndListeners() {
+        NceTrafficController tc = memo.getNceTrafficController();
+        if (tc == null) {
+            throw new IllegalStateException("NCE TrafficController not initialized");
+        }
+
+        TurnoutManager turnoutManager = memo.getTurnoutManager();
+        if (turnoutManager != null) {
+            accessoryController = new JmriAccessoryController(id, turnoutManager);
+        }
+        GlobalProgrammerManager gpm = InstanceManager.getNullableDefault(GlobalProgrammerManager.class);
+        if (gpm != null) {
+            programmerSession = new JmriProgrammerSession(id, gpm);
+        }
+
+        PowerManager pm = memo.getPowerManager();
+        if (pm != null) {
+            pm.addPropertyChangeListener(powerListener);
+        }
+    }
+
+    @Override
+    public ThrottleSession openThrottle(int address, boolean longAddress) throws IOException {
+        ThrottleManager tm = memo.getThrottleManager();
+        if (tm == null) {
+            throw new IOException("No ThrottleManager available on NCE connection");
+        }
+        final DccThrottle[] holder = new DccThrottle[1];
+        final IOException[] error = new IOException[1];
+        ThrottleListener listener = new ThrottleListener() {
+            @Override
+            public void notifyThrottleFound(DccThrottle t) {
+                holder[0] = t;
+            }
+
+            @Override
+            public void notifyFailedThrottleRequest(jmri.LocoAddress address, String reason) {
+                error[0] = new IOException("Throttle request failed: " + reason);
+            }
+
+            @Override
+            public void notifyDecisionRequired(jmri.LocoAddress address, ThrottleListener.DecisionType question) {
+                // Default behavior: cancel the request if a decision is required
+                error[0] = new IOException("Throttle address " + address + " is in use, decision required: " + question);
+            }
+        };
+        tm.requestThrottle(address, longAddress, listener, false);
+        if (error[0] != null) {
+            throw error[0];
+        }
+        if (holder[0] == null) {
+            throw new IOException("Throttle not granted for address " + address);
+        }
+        return new JmriThrottleSession(id, address, longAddress, holder[0], eventBus);
+    }
+
+    @Override
+    public ProgrammerSession getProgrammer() {
+        return programmerSession;
+    }
+
+    @Override
+    public AccessoryController getAccessoryController() {
+        return accessoryController;
+    }
+
+    @Override
+    public java.util.Map<String, String> getCommandStationInfo() {
+        Map<String, String> info = new HashMap<>();
+        info.put("manufacturer", "NCE");
+        info.put("model", "PowerCab");
+        // NCE doesn't provide version info in the same way, but we can identify it
+        return info;
+    }
+
+    @Override
+    public String getPowerStatus() {
+        PowerManager pm = memo.getPowerManager();
+        if (pm != null) {
+            int power = pm.getPower();
+            switch (power) {
+                case PowerManager.ON:
+                    return "ON";
+                case PowerManager.OFF:
+                    return "OFF";
+                case PowerManager.IDLE:
+                    return "IDLE";
+                default:
+                    return "UNKNOWN";
+            }
+        }
+        return "UNKNOWN";
+    }
+
+    private void onPowerChange(PropertyChangeEvent evt) {
+        if (PowerManager.POWER.equals(evt.getPropertyName())) {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("old", evt.getOldValue());
+            payload.put("new", evt.getNewValue());
+            eventBus.publish(new DccEvent(DccEventType.POWER_CHANGED, id, payload));
+        }
+    }
+
+    @Override
+    public void close() {
+        connected = false;
+        publishConnectionState();
+        
+        // Remove listeners first
+        PowerManager pm = memo.getPowerManager();
+        if (pm != null) {
+            pm.removePropertyChangeListener(powerListener);
+        }
+        
+        // Terminate traffic controller threads before closing port
+        NceTrafficController tc = memo.getNceTrafficController();
+        if (tc != null) {
+            try {
+                tc.terminateThreads();
+            } catch (Exception e) {
+                // Ignore errors during shutdown
+            }
+        }
+        
+        // Dispose adapter and memo (dispose() will close the port)
+        if (adapter != null) {
+            adapter.dispose();
+        }
+        if (memo != null) {
+            memo.dispose();
+        }
+    }
+}
+

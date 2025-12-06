@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DCC IO Daemon - Configuration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>DCC IO Daemon Configuration</h1>
+    <div id="status"></div>
+    
+    <div class="form-container">
+        <div class="discovery-section">
+            <button onclick="discoverDevices()" class="btn btn-primary">🔍 Auto-Discover Controllers</button>
+            <span id="discoverStatus" class="discover-status"></span>
+            <div id="discoveredDevices" class="discovered-devices"></div>
+        </div>
+        
+        <form id="configForm">
+            <div class="form-group">
+                <label>Connection ID:</label>
+                <input type="text" id="connId" required placeholder="e.g., elite1">
+            </div>
+            <div class="form-group">
+                <label>Controller Type:</label>
+                <select id="systemType" required></select>
+            </div>
+            <div class="form-group">
+                <label>User Name:</label>
+                <input type="text" id="userName" placeholder="Optional">
+            </div>
+            <div class="form-group">
+                <label>System Prefix:</label>
+                <input type="text" id="systemPrefix" placeholder="Optional">
+            </div>
+            <div class="form-group" id="portGroup">
+                <label>Port (e.g., /dev/ttyACM0, /dev/ttyUSB0, COM3):</label>
+                <select id="portName"></select>
+            </div>
+            <div class="form-group" id="serialOptionsGroup" style="display:none;">
+                <label>Baud Rate:</label>
+                <select id="baudRate">
+                    <option value="">Default (9600)</option>
+                    <option value="9600">9600</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600">57600</option>
+                    <option value="115200">115200</option>
+                </select>
+                <label style="margin-top: 10px;">Flow Control:</label>
+                <select id="flowControl">
+                    <option value="">Default (None)</option>
+                    <option value="none">None</option>
+                    <option value="rtscts">RTS/CTS (Hardware)</option>
+                </select>
+            </div>
+            <div class="form-group" id="networkGroup" style="display:none;">
+                <label>Host:</label>
+                <input type="text" id="host" placeholder="192.168.1.100">
+                <label>Port:</label>
+                <input type="number" id="port" placeholder="2560">
+            </div>
+            <button type="submit" class="btn btn-primary">Create Connection</button>
+        </form>
+    </div>
+    
+    <div class="connections">
+        <h2>Active Connections</h2>
+        <div id="connectionsList"></div>
+    </div>
+    
+    <div class="throttle-control">
+        <h2>Throttle Control</h2>
+        <div class="controller-info">
+            <small>Controller: <span id="throttleControllerInfo">Auto-assigned</span></small>
+        </div>
+        <div class="throttle-form">
+            <label>Address:</label>
+            <input type="number" id="throttleAddress" value="3" min="1" max="9999">
+            <label><input type="checkbox" id="throttleLongAddress"> Long Address</label>
+            <button onclick="openThrottle()" class="btn btn-primary">Open Throttle</button>
+            <button onclick="closeThrottle()" id="closeThrottleBtn" class="btn btn-danger" style="display: none;">Close Throttle</button>
+        </div>
+        <div id="throttleControls" style="display: none;">
+            <div class="control-group">
+                <label>Direction:</label>
+                <button id="throttleDirectionBtn" onclick="toggleDirection()" class="btn btn-primary">Forward</button>
+            </div>
+            <div class="control-group">
+                <label>Speed: <span id="throttleSpeedValue">0%</span></label>
+                <input type="range" id="throttleSpeed" min="0" max="100" value="0" step="1" oninput="updateThrottleSpeed(this.value)">
+            </div>
+            <div class="control-group">
+                <label>Functions:</label>
+                <div id="throttleFunctions" class="function-buttons"></div>
+            </div>
+            <div class="status-box">
+                <label>Status:</label>
+                <div id="throttleStatus" class="status-text">Not connected</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="accessory-control">
+        <h2>Accessory Control</h2>
+        <div class="controller-info">
+            <small>Controller: <span id="accessoryControllerInfo">Auto-assigned</span></small>
+        </div>
+        <div class="accessory-form">
+            <label>Address:</label>
+            <input type="number" id="accessoryAddress" value="1" min="1" max="2048">
+        </div>
+        <div class="accessory-buttons">
+            <button onclick="setAccessory(true)" class="btn btn-primary">CLOSED</button>
+            <button onclick="setAccessory(false)" class="btn btn-danger">THROWN</button>
+        </div>
+        <div class="status-box">
+            <label>Status:</label>
+            <div id="accessoryStatus" class="status-text">Ready</div>
+        </div>
+    </div>
+    
+    <div class="console">
+        <h2>Console</h2>
+        <div id="consoleOutput"></div>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
+
