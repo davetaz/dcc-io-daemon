@@ -25,6 +25,7 @@ async function loadPorts() {
     const data = await res.json();
     ports = data.ports;
     const select = document.getElementById('portName');
+    const previousSelection = select.value;
     select.innerHTML = '<option value="">Select port...</option>';
     ports.forEach(p => {
       const opt = document.createElement('option');
@@ -32,6 +33,10 @@ async function loadPorts() {
       opt.textContent = p;
       select.appendChild(opt);
     });
+    // Keep the user's selection if the port is still present
+    if (previousSelection && ports.includes(previousSelection)) {
+      select.value = previousSelection;
+    }
   } catch (err) {
     showStatus('Error loading ports: ' + err.message, 'error');
   }
@@ -520,5 +525,6 @@ loadSystems();
 loadPorts();
 loadConnections();
 setInterval(loadConnections, 5000);
+setInterval(loadPorts, 5000);
 connectEventStream();
 

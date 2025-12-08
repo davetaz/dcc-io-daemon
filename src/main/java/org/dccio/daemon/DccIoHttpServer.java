@@ -527,7 +527,9 @@ final class DccIoHttpServer {
                 for (Object port : commPorts) {
                     java.lang.reflect.Method getSystemPortName = port.getClass().getMethod("getSystemPortName");
                     String portName = (String) getSystemPortName.invoke(port);
-                    ports.add(portName);
+                    if (isPortPresent(portName)) {
+                        ports.add(portName);
+                    }
                 }
             } catch (Exception e) {
                 // Fallback to PureJavaComm if JSerialComm not available
@@ -543,7 +545,9 @@ final class DccIoHttpServer {
                         if (portType == PORT_SERIAL) {
                             java.lang.reflect.Method getName = id.getClass().getMethod("getName");
                             String portName = (String) getName.invoke(id);
-                            ports.add(portName);
+                            if (isPortPresent(portName)) {
+                                ports.add(portName);
+                            }
                         }
                     }
                 } catch (Exception e2) {
@@ -555,6 +559,17 @@ final class DccIoHttpServer {
                 joiner.add("\"" + escape(port) + "\"");
             }
             sendJson(exchange, 200, joiner.toString());
+        }
+
+        private boolean isPortPresent(String portName) {
+            if (portName == null || portName.isEmpty()) {
+                return false;
+            }
+            java.nio.file.Path devPath = java.nio.file.Paths.get("/dev", portName);
+            if (java.nio.file.Files.exists(devPath)) {
+                return true;
+            }
+            return portName.toUpperCase().startsWith("COM");
         }
     }
 

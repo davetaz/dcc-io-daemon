@@ -42,6 +42,9 @@ public final class DccIoServiceImpl implements DccIoService {
     // Track connected device ports to detect new devices
     private final Set<String> connectedPorts = ConcurrentHashMap.newKeySet();
     
+    // Map port to connection ID for cleanup when port disappears
+    private final Map<String, String> portToConnectionId = new ConcurrentHashMap<>();
+    
     // Background thread for continuous device monitoring
     private final ScheduledExecutorService deviceMonitor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "DeviceMonitor");
@@ -69,8 +72,13 @@ public final class DccIoServiceImpl implements DccIoService {
     /**
      * Auto-discover and connect to detected controllers.
      * This will scan for devices and automatically create connections for any detected controllers.
+     * Also checks for ports that have disappeared and removes those connections.
      */
     private void autoConnectDevices() {
+        // First, check for ports that have disappeared and remove those connections
+        checkForDisconnectedPorts();
+        
+        // Then, discover and connect to new devices
         java.util.List<DeviceDiscoveryService.DetectedDevice> devices = discoveryService.discoverDevices();
         for (DeviceDiscoveryService.DetectedDevice device : devices) {
             // Skip if already connected
@@ -84,6 +92,7 @@ public final class DccIoServiceImpl implements DccIoService {
             // Skip if connection already exists
             if (connections.containsKey(connectionId)) {
                 connectedPorts.add(device.port);
+                portToConnectionId.put(device.port, connectionId);
                 continue;
             }
             
@@ -107,6 +116,7 @@ public final class DccIoServiceImpl implements DccIoService {
                 // Auto-connect
                 conn.connect();
                 connectedPorts.add(device.port);
+                portToConnectionId.put(device.port, connectionId);
                 System.out.println("Auto-connected to " + device.name + " on " + device.port);
                 
                 // Auto-assign roles if not already assigned
@@ -114,6 +124,28 @@ public final class DccIoServiceImpl implements DccIoService {
                 
             } catch (Exception e) {
                 System.err.println("Failed to auto-connect to " + device.name + " on " + device.port + ": " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * Check for ports that have disappeared and remove connections using those ports.
+     */
+    private void checkForDisconnectedPorts() {
+        // Create a copy of the port set to avoid concurrent modification
+        Set<String> portsToCheck = new HashSet<>(connectedPorts);
+        
+        for (String port : portsToCheck) {
+            // Check if port still exists
+            if (!discoveryService.isPortPresent(port)) {
+                String connectionId = portToConnectionId.get(port);
+                if (connectionId != null) {
+                    System.out.println("Port " + port + " no longer available, removing connection " + connectionId);
+                    removeConnection(connectionId);
+                } else {
+                    // Port was tracked but no connection ID found - just clean up
+                    connectedPorts.remove(port);
+                }
             }
         }
     }
@@ -254,6 +286,14 @@ public final class DccIoServiceImpl implements DccIoService {
                 throw new IllegalArgumentException("Unsupported systemType: " + config.getSystemType());
         }
         connections.put(config.getId(), conn);
+        
+        // Track port if this connection uses a serial port
+        String portName = config.getOption("portName");
+        if (portName != null && !portName.isEmpty()) {
+            connectedPorts.add(portName);
+            portToConnectionId.put(portName, config.getId());
+        }
+        
         return conn;
     }
 
@@ -285,9 +325,19 @@ public final class DccIoServiceImpl implements DccIoService {
                     accessoryControllerId = null;
                 }
             }
-            // Remove from connected ports (we'll need to track port somehow)
-            // For now, just clear all and let monitoring rediscover
-            connectedPorts.clear();
+            // Remove from connected ports and port mapping
+            // Find the port for this connection ID
+            String portToRemove = null;
+            for (Map.Entry<String, String> entry : portToConnectionId.entrySet()) {
+                if (entry.getValue().equals(id)) {
+                    portToRemove = entry.getKey();
+                    break;
+                }
+            }
+            if (portToRemove != null) {
+                connectedPorts.remove(portToRemove);
+                portToConnectionId.remove(portToRemove);
+            }
         }
     }
 
@@ -386,6 +436,7 @@ public final class DccIoServiceImpl implements DccIoService {
         }
         connections.clear();
         connectedPorts.clear();
+        portToConnectionId.clear();
     }
 }
 

@@ -138,6 +138,7 @@ public class DeviceDiscoveryService {
             Class<?> jSerialCommClass = Class.forName("com.fazecast.jSerialComm.SerialPort");
             java.lang.reflect.Method getCommPorts = jSerialCommClass.getMethod("getCommPorts");
             Object[] commPorts = (Object[]) getCommPorts.invoke(null);
+            List<String> availablePorts = new ArrayList<>();
             
             for (Object port : commPorts) {
                 try {
@@ -147,9 +148,14 @@ public class DeviceDiscoveryService {
                     java.lang.reflect.Method getDescriptivePortName = port.getClass().getMethod("getDescriptivePortName");
                     
                     String portName = (String) getSystemPortName.invoke(port);
+                    // Guard against stale devices that jSerialComm still reports after unplug
+                    if (!isPortPresent(portName)) {
+                        continue;
+                    }
                     int vendorId = ((Integer) getVendorID.invoke(port));
                     int productId = ((Integer) getProductID.invoke(port));
                     String description = (String) getDescriptivePortName.invoke(port);
+                    availablePorts.add(description != null ? description + " (" + portName + ")" : portName);
                     
                     // Match against config
                     DeviceConfig match = findMatchingConfig(vendorId, productId, description, portName);
@@ -173,6 +179,22 @@ public class DeviceDiscoveryService {
         }
         
         return detected;
+    }
+
+    /**
+     * Best-effort check to see if the OS still exposes the port (helps when jSerialComm caches).
+     */
+    public boolean isPortPresent(String portName) {
+        if (portName == null || portName.isEmpty()) {
+            return false;
+        }
+        // Linux/macOS style device paths
+        java.nio.file.Path devPath = java.nio.file.Paths.get("/dev", portName);
+        if (java.nio.file.Files.exists(devPath)) {
+            return true;
+        }
+        // Windows style (COM) ports don't map to /dev, so we trust enumeration there
+        return portName.toUpperCase().startsWith("COM");
     }
     
     /**
