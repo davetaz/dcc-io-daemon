@@ -78,10 +78,9 @@
             <label>Address:</label>
             <input type="number" id="throttleAddress" value="3" min="1" max="9999">
             <label><input type="checkbox" id="throttleLongAddress"> Long Address</label>
-            <button onclick="openThrottle()" class="btn btn-primary">Open Throttle</button>
-            <button onclick="closeThrottle()" id="closeThrottleBtn" class="btn btn-danger" style="display: none;">Close Throttle</button>
+            <button onclick="getThrottleStatus()" class="btn btn-primary">Get Status</button>
         </div>
-        <div id="throttleControls" style="display: none;">
+        <div id="throttleControls">
             <div class="control-group">
                 <label>Direction:</label>
                 <button id="throttleDirectionBtn" onclick="toggleDirection()" class="btn btn-primary">Forward</button>
@@ -123,6 +122,31 @@
     <div class="console">
         <h2>Console</h2>
         <div id="consoleOutput"></div>
+        <div class="ws-console">
+            <div class="ws-header">
+                <span>WebSocket tester (ws://host:port+1/json)</span>
+                <span id="wsStatus" class="ws-status">Disconnected</span>
+                <button class="btn btn-primary btn-small" onclick="manualReconnectWs()">Reconnect</button>
+            </div>
+            <div class="ws-examples">
+                <label for="wsExampleSelect">Example Messages:</label>
+                <select id="wsExampleSelect" onchange="loadExampleMessage()">
+                    <option value="">Select an example...</option>
+                    <option value="status">Get Status</option>
+                    <option value="throttle-get">Get Throttle Status (GET)</option>
+                    <option value="throttle-post">Control Throttle (POST)</option>
+                    <option value="throttles-list">List All Throttles</option>
+                    <option value="accessories-post">Post Accessories with Commands</option>
+                    <option value="accessories-get">Get Single Accessory</option>
+                    <option value="accessories-list">List All Accessories</option>
+                </select>
+            </div>
+            <textarea id="wsInput" rows="4" placeholder='{"type":"status"}'></textarea>
+            <div class="ws-actions">
+                <button class="btn btn-primary" onclick="sendWs()">Send JSON</button>
+            </div>
+            <div id="wsMessages" class="ws-messages"></div>
+        </div>
     </div>
     
     <script src="/static/app.js"></script>

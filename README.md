@@ -173,6 +173,351 @@ If only one controller is connected, it's automatically assigned both roles. If 
 - `GET /api/events` - Server-Sent Events (SSE) stream for real-time updates
   - Event types: `MESSAGE_RECEIVED`, `MESSAGE_SENT`, `THROTTLE_UPDATED`, `POWER_CHANGED`, `CONNECTION_STATE_CHANGED`
 
+## WebSocket JSON API
+
+The WebSocket endpoint listens on `ws://<host>:<port+1>/json` (port is HTTP port + 1). Messages are JSON envelopes:
+
+- `type`: resource name (e.g., `throttle`, `throttles`, `accessories`)
+- `method`: optional, defaults to `get` (supported: `get`, `post`, `put` where a handler allows)
+- `data`: optional object payload
+- `list`: optional alternative to list all items of a type (delegates to handler `list`)
+- `id`: optional request identifier (string) - if provided, will be echoed back in the response for request/response correlation
+
+Error responses use:
+
+```json
+{ "type": "error", "data": { "code": 400, "message": "reason" }, "id": "req-1" }
+```
+
+If a request includes an `id`, all responses (including errors) will include the same `id` to enable request/response correlation.
+
+### Broadcast events
+
+The server broadcasts JSON to all connected clients when changes occur:
+
+- `status` with `method: "patch"` – delta of changed connections. Only includes connections that changed (connect/disconnect, power status, or roles). Always includes `id`, `connected`, `powerStatus`, and `roles` for changed connections. `systemType` and `commandStation` are only included for new connections.
+- `throttle` with `method: "patch"` – only the changed throttle fields plus identifiers (throttle id, address, longAddress). Functions are sent as an object with numeric string keys (e.g., `{ "functions": { "0": true, "1": false } }`). When speed is included, direction is always included.
+- `accessories` with `method: "patch"` – array of changed accessories with `name` and `state`
+
+### Status (WebSocket)
+
+Returns server status plus active connections (mirrors the REST `/connections` route).
+
+**Get status**
+
+```json
+{ "id": "req-1", "type": "status" }
+```
+
+Response:
+
+```json
+{
+  "id": "req-1",
+  "type": "status",
+  "data": {
+    "status": "ok",
+    "connections": [
+      {
+        "id": "elite1",
+        "systemType": "xnet-elite",
+        "connected": true,
+        "commandStation": { "version": "1.0" },
+        "powerStatus": "ON",
+        "roles": ["throttles", "accessories"]
+      }
+    ]
+  }
+}
+```
+
+**Status patch broadcasts:**
+
+The server automatically broadcasts status patches (`type: "status", method: "patch"`) when:
+- A controller connects or disconnects
+- Power status changes (e.g., emergency stop button pressed, power turned off/on)
+- Controller roles change
+
+The patch format is a delta - only changed connections are included. Each changed connection always includes:
+- `id` - connection identifier
+- `connected` - connection state
+- `powerStatus` - current power status
+- `roles` - array of roles (e.g., `["throttles", "accessories"]`)
+
+For new connections only, the patch also includes:
+- `systemType` - system type identifier
+- `commandStation` - command station information object
+
+Example patch for a power status change:
+
+```json
+{
+  "type": "status",
+  "method": "patch",
+  "data": {
+    "status": "ok",
+    "connections": [
+      {
+        "id": "elite1",
+        "connected": true,
+        "powerStatus": "OFF",
+        "roles": ["throttles", "accessories"]
+      }
+    ]
+  }
+}
+```
+
+### Accessories (WebSocket)
+
+POST runs commands and stores accessory name/state pairs; GET returns stored states. PUT is not supported.
+
+**POST multiple accessories and commands**
+
+```json
+{
+  "id": "req-1",
+  "type": "accessories",
+  "method": "post",
+  "data": {
+    "accessories": [
+      { "name": "signal1", "state": "green" },
+      { "name": "point1", "state": "thrown" }
+    ],
+    "commands": [
+      { "address": 12, "state": "closed" },
+      { "address": 1, "state": "thrown" }
+    ]
+  }
+}
+```
+
+**Successful response**
+
+```json
+{
+  "id": "req-1",
+  "type": "accessories",
+  "data": {
+    "accessories": [
+      { "name": "signal1", "state": "green" },
+      { "name": "point1", "state": "thrown" }
+    ],
+    "commands": [
+      { "address": 12, "closed": true },
+      { "address": 1, "closed": false }
+    ]
+  }
+}
+```
+
+Notes:
+- `state` for commands accepts `closed` or `thrown`. Anything else yields 400.
+- Commands execute immediately through the accessory controller; command results are not stored.
+- Accessory `name`/`state` pairs are stored in memory for later GET/list retrieval.
+
+**GET single accessory**
+
+```json
+{ "id": "req-2", "type": "accessories", "data": { "name": "signal1" } }
+```
+
+Response:
+
+```json
+{ "id": "req-2", "type": "accessories", "data": { "name": "signal1", "state": "green" } }
+```
+
+If unknown: `{ "id": "req-2", "type": "error", "data": { "code": 404, "message": "..." } }`.
+
+**List all accessories (GET/list)**
+
+```json
+{ "id": "req-3", "list": "accessories" }
+```
+or
+```json
+{ "id": "req-3", "type": "accessories" }
+```
+
+Response:
+
+```json
+{
+  "id": "req-3",
+  "type": "accessories",
+  "data": [
+    { "name": "signal1", "state": "green" },
+    { "name": "point1", "state": "thrown" }
+  ]
+}
+```
+
+### Throttles (WebSocket)
+
+Clients POST directly to a DCC address - throttles are created/retrieved automatically. Only one client can control speed/direction per address at a time (2 second timeout). Functions can be controlled by any client concurrently.
+
+**Get throttle status by address (GET):**
+
+```json
+{
+  "id": "req-1",
+  "type": "throttle",
+  "data": {
+    "address": 3
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "id": "req-1",
+  "type": "throttle",
+  "data": {
+    "throttle": "conn1:3:false",
+    "connectionId": "conn1",
+    "address": 3,
+    "longAddress": false,
+    "speed": 0.6,
+    "forward": true,
+    "functions": {
+      "0": false,
+      "1": true,
+      "2": false,
+      "3": false,
+      "4": false,
+      "5": false,
+      "6": false,
+      "7": false,
+      "8": false,
+      "9": false,
+      "10": false,
+      "11": false,
+      "12": false,
+      "13": false,
+      "14": false,
+      "15": false,
+      "16": false,
+      "17": false,
+      "18": false,
+      "19": false,
+      "20": false,
+      "21": false,
+      "22": false,
+      "23": false,
+      "24": false,
+      "25": false,
+      "26": false,
+      "27": false,
+      "28": false
+    }
+  }
+}
+```
+
+If no throttle exists for that address: `type: "error", code: 404`.
+
+**Control throttle by address (POST):**
+
+```json
+{
+  "id": "req-1",
+  "type": "throttle",
+  "method": "post",
+  "data": {
+    "address": 3,
+    "speed": 0.6,
+    "forward": true,
+    "functions": {
+      "0": true,
+      "1": true,
+      "2": false
+    }
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "req-1",
+  "type": "throttle",
+  "data": {
+    "throttle": "conn1:3:false",
+    "connectionId": "conn1",
+    "address": 3,
+    "longAddress": false,
+    "speed": 0.6,
+    "forward": true,
+    "functions": {
+      "0": false,
+      "1": true,
+      "2": false,
+      "3": false,
+      "4": false,
+      "5": false,
+      "6": false,
+      "7": false,
+      "8": false,
+      "9": false,
+      "10": false,
+      "11": false,
+      "12": false,
+      "13": false,
+      "14": false,
+      "15": false,
+      "16": false,
+      "17": false,
+      "18": false,
+      "19": false,
+      "20": false,
+      "21": false,
+      "22": false,
+      "23": false,
+      "24": false,
+      "25": false,
+      "26": false,
+      "27": false,
+      "28": false
+    },
+    "updated": true
+  }
+}
+```
+
+**If another client has control (409 Conflict):**
+
+```json
+{
+  "id": "req-1",
+  "type": "error",
+  "data": {
+    "code": 409,
+    "message": "Throttle busy: another client is controlling speed/direction for address 3"
+  }
+}
+```
+
+**Notes:**
+- `address` (required): DCC address (1-9999)
+- `longAddress` (optional): true for long addresses (default: false)
+- `speed` (optional): 0.0 to 1.0
+- `forward` (optional): true for forward, false for reverse
+- `functions` (optional): Object with function numbers as string keys and boolean values (e.g., `{ "0": true, "1": false, "2": true }` for F0 on, F1 off, F2 on)
+- Speed/direction: Exclusive lock per address (2 second timeout after last update)
+- Functions: No locking - any client can control
+
+**List all throttles:**
+
+```json
+{ "id": "req-2", "list": "throttles" }
+```
+
+Throttle responses return `type` of `throttle` or `throttles` with a `data` object/array. Errors use the standard error envelope.
+
 ## Configuration
 
 ### Device Discovery

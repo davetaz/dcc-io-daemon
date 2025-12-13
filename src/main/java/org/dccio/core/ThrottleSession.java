@@ -49,6 +49,21 @@ public interface ThrottleSession extends Closeable {
     void setFunction(int functionNumber, boolean on) throws IOException;
 
     /**
+     * @return the current speed setting (0.0 to 1.0).
+     */
+    float getSpeed();
+
+    /**
+     * @return the current direction (true for forward, false for reverse).
+     */
+    boolean getDirection();
+
+    /**
+     * @return the current state of a function (F0..Fn).
+     */
+    boolean getFunction(int functionNumber);
+
+    /**
      * Release any underlying JMRI throttle allocations but keep the connection
      * itself alive.
      */

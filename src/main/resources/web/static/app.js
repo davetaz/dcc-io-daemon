@@ -168,46 +168,30 @@ async function loadConnections() {
   }
 }
 
-let currentThrottleId = null;
 let throttleState = { speed: 0, forward: true, functions: {} };
 
-async function openThrottle() {
+async function getThrottleStatus() {
   const address = parseInt(document.getElementById('throttleAddress').value);
   const longAddress = document.getElementById('throttleLongAddress').checked;
   if (!address) {
     showStatus('Please enter an address', 'error');
     return;
   }
-  try {
-    const res = await fetch('/api/throttles?address=' + address + '&longAddress=' + longAddress, { method: 'POST' });
-    const data = await res.json();
-    if (res.ok) {
-      currentThrottleId = data.id;
-      document.getElementById('throttleControls').style.display = 'block';
-      document.getElementById('closeThrottleBtn').style.display = 'inline-block';
-      updateThrottleStatus('Throttle opened for train ' + address);
-      showStatus('Throttle opened successfully', 'success');
-      initThrottleFunctions();
-    } else {
-      showStatus('Error: ' + (data.error || 'Unknown error'), 'error');
-    }
-  } catch (err) {
-    showStatus('Error: ' + err.message, 'error');
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showStatus('WebSocket not connected', 'error');
+    return;
   }
-}
-
-async function closeThrottle() {
-  if (!currentThrottleId) return;
   try {
-    const res = await fetch('/api/throttles/' + encodeURIComponent(currentThrottleId), { method: 'DELETE' });
-    if (res.ok) {
-      currentThrottleId = null;
-      document.getElementById('throttleControls').style.display = 'none';
-      document.getElementById('closeThrottleBtn').style.display = 'none';
-      throttleState = { speed: 0, forward: true, functions: {} };
-      updateThrottleStatus('Throttle closed');
-      showStatus('Throttle closed', 'success');
-    }
+    const message = {
+      id: 'get-throttle-' + Date.now(),
+      type: 'throttle',
+      data: {
+        address: address,
+        longAddress: longAddress
+      }
+    };
+    ws.send(JSON.stringify(message));
+    updateThrottleStatus('Querying throttle status for address ' + address);
   } catch (err) {
     showStatus('Error: ' + err.message, 'error');
   }
@@ -234,19 +218,31 @@ function initThrottleFunctions() {
 }
 
 async function toggleFunction(funcNum) {
-  if (!currentThrottleId) return;
   const currentState = throttleState.functions[funcNum] || false;
   await setFunction(funcNum, !currentState);
 }
 
 async function setFunction(funcNum, on) {
-  if (!currentThrottleId) return;
+  const address = parseInt(document.getElementById('throttleAddress').value);
+  const longAddress = document.getElementById('throttleLongAddress').checked;
+  if (!address || !ws || ws.readyState !== WebSocket.OPEN) return;
+  
   try {
-    const res = await fetch('/api/throttles/' + encodeURIComponent(currentThrottleId) + '/function?number=' + funcNum + '&on=' + on, { method: 'POST' });
-    if (res.ok) {
-      throttleState.functions[funcNum] = on;
-      updateFunctionButton(funcNum, on);
-    }
+    const message = {
+      id: 'throttle-func-' + Date.now(),
+      type: 'throttle',
+      method: 'post',
+      data: {
+        address: address,
+        longAddress: longAddress,
+        functions: {
+          [String(funcNum)]: on
+        }
+      }
+    };
+    ws.send(JSON.stringify(message));
+    throttleState.functions[funcNum] = on;
+    updateFunctionButton(funcNum, on);
   } catch (err) {
     console.error('Error setting function:', err);
   }
@@ -266,30 +262,52 @@ function updateFunctionButton(funcNum, on) {
 }
 
 async function toggleDirection() {
-  if (!currentThrottleId) return;
+  const address = parseInt(document.getElementById('throttleAddress').value);
+  const longAddress = document.getElementById('throttleLongAddress').checked;
+  if (!address || !ws || ws.readyState !== WebSocket.OPEN) return;
+  
   const newForward = !throttleState.forward;
   try {
-    const res = await fetch('/api/throttles/' + encodeURIComponent(currentThrottleId) + '/direction?forward=' + newForward, { method: 'POST' });
-    if (res.ok) {
-      throttleState.forward = newForward;
-      const btn = document.getElementById('throttleDirectionBtn');
-      btn.textContent = newForward ? 'Forward' : 'Reverse';
-    }
+    const message = {
+      id: 'throttle-dir-' + Date.now(),
+      type: 'throttle',
+      method: 'post',
+      data: {
+        address: address,
+        longAddress: longAddress,
+        forward: newForward
+      }
+    };
+    ws.send(JSON.stringify(message));
+    throttleState.forward = newForward;
+    const btn = document.getElementById('throttleDirectionBtn');
+    btn.textContent = newForward ? 'Forward' : 'Reverse';
   } catch (err) {
     console.error('Error setting direction:', err);
   }
 }
 
 async function updateThrottleSpeed(value) {
-  if (!currentThrottleId) return;
+  const address = parseInt(document.getElementById('throttleAddress').value);
+  const longAddress = document.getElementById('throttleLongAddress').checked;
+  if (!address || !ws || ws.readyState !== WebSocket.OPEN) return;
+  
   const speedPercent = parseInt(value);
   document.getElementById('throttleSpeedValue').textContent = speedPercent + '%';
   const speedNormalized = speedPercent / 100.0;
   try {
-    const res = await fetch('/api/throttles/' + encodeURIComponent(currentThrottleId) + '/speed?value=' + speedNormalized, { method: 'POST' });
-    if (res.ok) {
-      throttleState.speed = speedNormalized;
-    }
+    const message = {
+      id: 'throttle-speed-' + Date.now(),
+      type: 'throttle',
+      method: 'post',
+      data: {
+        address: address,
+        longAddress: longAddress,
+        speed: speedNormalized
+      }
+    };
+    ws.send(JSON.stringify(message));
+    throttleState.speed = speedNormalized;
   } catch (err) {
     console.error('Error setting speed:', err);
   }
@@ -353,6 +371,8 @@ async function requestVersion(connectionId) {
 
 let eventSource = null;
 let connectionPowerStatus = {};
+let ws = null;
+let wsReconnectTimer = null;
 
 function connectEventStream() {
   if (eventSource) {
@@ -520,6 +540,252 @@ function useDiscoveredDevice(port, systemType) {
   showStatus('Device selected: ' + port, 'success');
 }
 
+function buildWsUrl() {
+  const loc = window.location;
+  const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+  const port = loc.port ? ':' + (parseInt(loc.port, 10) + 1) : '';
+  return `${protocol}//${loc.hostname}${port}/json`;
+}
+
+function connectWebSocket() {
+  const statusEl = document.getElementById('wsStatus');
+  const url = buildWsUrl();
+  if (ws) {
+    ws.onopen = null;
+    ws.onclose = null;
+    ws.onmessage = null;
+    ws.onerror = null;
+    ws.close();
+  }
+  ws = new WebSocket(url);
+  statusEl.textContent = 'Connecting...';
+  statusEl.classList.remove('connected');
+
+  ws.onopen = () => {
+    statusEl.textContent = 'Connected';
+    statusEl.classList.add('connected');
+    addWsMessage('Connected to ' + url, 'info');
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = 'Disconnected';
+    statusEl.classList.remove('connected');
+    addWsMessage('Disconnected', 'error');
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+    }
+    wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+  };
+
+  ws.onerror = (err) => {
+    addWsMessage('WebSocket error: ' + (err.message || ''), 'error');
+  };
+
+  ws.onmessage = (evt) => {
+    try {
+      const parsed = JSON.parse(evt.data);
+      addWsMessage(JSON.stringify(parsed, null, 2), 'in');
+      applyWsDelta(parsed);
+    } catch (e) {
+      addWsMessage(evt.data, 'in');
+    }
+  };
+}
+
+function manualReconnectWs() {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  connectWebSocket();
+}
+
+function addWsMessage(message, cls) {
+  const container = document.getElementById('wsMessages');
+  const line = document.createElement('div');
+  line.className = 'ws-msg ' + (cls || '');
+  const ts = new Date().toLocaleTimeString();
+  line.innerHTML = `<span class="ws-ts">${ts}</span>${escapeHtml(message)}`;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+  while (container.children.length > 300) {
+    container.removeChild(container.firstChild);
+  }
+}
+
+function sendWs() {
+  const input = document.getElementById('wsInput');
+  const text = input.value.trim();
+  if (!text) {
+    addWsMessage('Nothing to send', 'error');
+    return;
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addWsMessage('WebSocket not connected', 'error');
+    return;
+  }
+  try {
+    JSON.parse(text);
+  } catch (e) {
+    addWsMessage('Invalid JSON: ' + e.message, 'error');
+    return;
+  }
+  ws.send(text);
+  addWsMessage(text, 'out');
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function applyWsDelta(msg) {
+  if (!msg || !msg.type) return;
+  if (msg.type === 'status') {
+    // refresh connections view on status broadcast
+    loadConnections();
+  } else if (msg.type === 'throttle') {
+    const currentAddress = parseInt(document.getElementById('throttleAddress').value);
+    const currentLongAddress = document.getElementById('throttleLongAddress').checked;
+    
+    if (msg.method === 'patch' && msg.data) {
+      // Check if this update is for the current address
+      if (msg.data.address === currentAddress && msg.data.longAddress === currentLongAddress) {
+        if (msg.data.speed !== undefined) {
+          throttleState.speed = msg.data.speed;
+          const percent = Math.round(msg.data.speed * 100);
+          document.getElementById('throttleSpeed').value = percent;
+          document.getElementById('throttleSpeedValue').textContent = percent + '%';
+        }
+        if (msg.data.forward !== undefined) {
+          throttleState.forward = msg.data.forward;
+          document.getElementById('throttleDirectionBtn').textContent = msg.data.forward ? 'Forward' : 'Reverse';
+        }
+        if (msg.data.functions) {
+          Object.keys(msg.data.functions).forEach(fn => {
+            const on = msg.data.functions[fn];
+            throttleState.functions[fn] = on;
+            updateFunctionButton(parseInt(fn, 10), on);
+          });
+        }
+      }
+    } else if (!msg.method && msg.data && msg.data.address === currentAddress && msg.data.longAddress === currentLongAddress) {
+      // GET response - update UI with current state
+      if (msg.data.speed !== undefined) {
+        throttleState.speed = msg.data.speed;
+        const percent = Math.round(msg.data.speed * 100);
+        document.getElementById('throttleSpeed').value = percent;
+        document.getElementById('throttleSpeedValue').textContent = percent + '%';
+      }
+      if (msg.data.forward !== undefined) {
+        throttleState.forward = msg.data.forward;
+        document.getElementById('throttleDirectionBtn').textContent = msg.data.forward ? 'Forward' : 'Reverse';
+      }
+      if (msg.data.functions) {
+        Object.keys(msg.data.functions).forEach(fn => {
+          const on = msg.data.functions[fn];
+          throttleState.functions[parseInt(fn, 10)] = on;
+          updateFunctionButton(parseInt(fn, 10), on);
+        });
+      }
+      updateThrottleStatus('Throttle status for address ' + currentAddress);
+    }
+  } else if (msg.type === 'accessories' && msg.method === 'patch' && msg.data && msg.data.length > 0) {
+    const first = msg.data[0];
+    if (first && first.name && first.state) {
+      updateAccessoryStatus(first.name + ' -> ' + first.state);
+    }
+  }
+}
+
+function loadExampleMessage() {
+  const select = document.getElementById('wsExampleSelect');
+  const input = document.getElementById('wsInput');
+  const value = select.value;
+  if (!value) {
+    input.value = '';
+    return;
+  }
+  
+  let example = '';
+  switch (value) {
+    case 'status':
+      example = JSON.stringify({ 
+        id: 'req-1',
+        type: 'status' 
+      }, null, 2);
+      break;
+    case 'throttle-get':
+      example = JSON.stringify({
+        id: 'req-2',
+        type: 'throttle',
+        data: {
+          address: 3
+        }
+      }, null, 2);
+      break;
+    case 'throttle-post':
+      example = JSON.stringify({
+        id: 'req-3',
+        type: 'throttle',
+        method: 'post',
+        data: {
+          address: 3,
+          speed: 0.6,
+          forward: true,
+          functions: {
+            "0": true,
+            "1": true,
+            "2": false
+          }
+        }
+      }, null, 2);
+      break;
+    case 'throttles-list':
+      example = JSON.stringify({ 
+        id: 'req-5',
+        list: 'throttles' 
+      }, null, 2);
+      break;
+    case 'accessories-post':
+      example = JSON.stringify({
+        id: 'req-6',
+        type: 'accessories',
+        method: 'post',
+        data: {
+          accessories: [
+            { name: 'signal1', state: 'green' },
+            { name: 'point1', state: 'thrown' }
+          ],
+          commands: [
+            { address: 12, state: 'closed' },
+            { address: 1, state: 'thrown' }
+          ]
+        }
+      }, null, 2);
+      break;
+    case 'accessories-get':
+      example = JSON.stringify({
+        id: 'req-7',
+        type: 'accessories',
+        data: {
+          name: 'signal1'
+        }
+      }, null, 2);
+      break;
+    case 'accessories-list':
+      example = JSON.stringify({ 
+        id: 'req-8',
+        list: 'accessories' 
+      }, null, 2);
+      break;
+  }
+  input.value = example;
+  select.value = ''; // Reset dropdown after selection
+}
+
 // Initialize on page load
 loadSystems();
 loadPorts();
@@ -527,4 +793,6 @@ loadConnections();
 setInterval(loadConnections, 5000);
 setInterval(loadPorts, 5000);
 connectEventStream();
+connectWebSocket();
+initThrottleFunctions();
 

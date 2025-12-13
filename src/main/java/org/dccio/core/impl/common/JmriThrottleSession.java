@@ -121,6 +121,21 @@ public class JmriThrottleSession implements ThrottleSession {
     }
 
     @Override
+    public float getSpeed() {
+        return delegate.getSpeedSetting();
+    }
+
+    @Override
+    public boolean getDirection() {
+        return delegate.getIsForward();
+    }
+
+    @Override
+    public boolean getFunction(int functionNumber) {
+        return delegate.getFunction(functionNumber);
+    }
+
+    @Override
     public void close() {
         // Remove property change listener before releasing
         delegate.removePropertyChangeListener(throttleListener);
