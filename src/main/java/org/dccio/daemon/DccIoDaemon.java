@@ -86,6 +86,7 @@ public final class DccIoDaemon {
         service.getEventBus().addListener(new StatusEventBroadcaster(statusHandler));
         
         DccIoHttpServer httpServer = new DccIoHttpServer(service, port);
+        httpServer.setStatusHandler(statusHandler);
         httpServer.start();
         System.out.println("DCC IO daemon listening on port " + port);
         System.out.println("Press Ctrl+C to stop the daemon");

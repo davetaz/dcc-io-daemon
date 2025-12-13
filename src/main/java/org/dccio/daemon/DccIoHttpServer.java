@@ -35,6 +35,7 @@ final class DccIoHttpServer {
     private final DccIoServiceImpl service;
     private final org.dccio.core.DeviceDiscoveryService discoveryService;
     private final HttpServer server;
+    private JsonStatusHandler statusHandler;
 
     DccIoHttpServer(DccIoServiceImpl service, int port) throws IOException {
         this.service = service;
@@ -45,8 +46,6 @@ final class DccIoHttpServer {
         server.createContext("/connections/create", new CreateConnectionHandler());
         server.createContext("/connections/requestVersion", new RequestVersionHandler());
         server.createContext("/connections/setRole", new SetRoleHandler());
-        server.createContext("/api/throttles", new ThrottlesHandler());
-        server.createContext("/api/accessories", new AccessoriesHandler());
         server.createContext("/api/ports", new PortsHandler());
         server.createContext("/api/systems", new SystemsHandler());
         server.createContext("/api/discover", new DiscoverHandler());
@@ -54,6 +53,10 @@ final class DccIoHttpServer {
         server.createContext("/static", new StaticFileHandler()); // Serve static files (CSS, JS)
         server.createContext("/", new WebUIHandler()); // Serve web UI
         server.setExecutor(null); // default executor
+    }
+
+    void setStatusHandler(JsonStatusHandler statusHandler) {
+        this.statusHandler = statusHandler;
     }
 
     void start() {
@@ -248,7 +251,20 @@ final class DccIoHttpServer {
                 }
                 
                 boolean enabled = "true".equalsIgnoreCase(enabledStr);
+                
+                // Get previous state before role change
+                java.util.Map<String, com.google.gson.JsonObject> previousState = null;
+                if (statusHandler != null) {
+                    previousState = statusHandler.getCurrentState();
+                }
+                
                 ((DccIoServiceImpl) service).setControllerRole(connectionId, role, enabled);
+                
+                // Trigger status patch broadcast for role change
+                if (statusHandler != null && previousState != null) {
+                    statusHandler.broadcastStatusPatch(previousState);
+                }
+                
                 sendJson(exchange, 200, "{\"status\":\"ok\"}");
             } catch (IllegalArgumentException e) {
                 sendJson(exchange, 400, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
@@ -256,183 +272,6 @@ final class DccIoHttpServer {
         }
     }
 
-    private final class ThrottlesHandler extends JsonHandler {
-        @Override
-        protected void handleJson(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            String path = exchange.getRequestURI().getPath();
-            
-            if ("GET".equalsIgnoreCase(method) && "/api/throttles".equals(path)) {
-                // List all throttles
-                StringJoiner joiner = new StringJoiner(",", "{\"throttles\":[", "]}");
-                for (org.dccio.core.ThrottleSession t : ((org.dccio.core.impl.DccIoServiceImpl) service).getThrottles()) {
-                    StringJoiner throttleJson = new StringJoiner(",");
-                    throttleJson.add("\"id\":\"" + escape(t.getConnectionId() + ":" + t.getAddress() + ":" + t.isLongAddress()) + "\"");
-                    throttleJson.add("\"connectionId\":\"" + escape(t.getConnectionId()) + "\"");
-                    throttleJson.add("\"address\":" + t.getAddress());
-                    throttleJson.add("\"longAddress\":" + t.isLongAddress());
-                    joiner.add("{" + throttleJson.toString() + "}");
-                }
-                sendJson(exchange, 200, joiner.toString());
-            } else if ("POST".equalsIgnoreCase(method) && "/api/throttles".equals(path)) {
-                // Open a throttle (uses assigned throttle controller automatically)
-                Map<String, String> q = queryParams(exchange.getRequestURI());
-                String addressStr = q.get("address");
-                String longAddressStr = q.get("longAddress");
-                
-                if (addressStr == null) {
-                    sendJson(exchange, 400, "{\"error\":\"Missing address\"}");
-                    return;
-                }
-                
-                try {
-                    int address = Integer.parseInt(addressStr);
-                    boolean longAddress = "true".equalsIgnoreCase(longAddressStr);
-                    // Pass null to use assigned throttle controller
-                    String throttleId = ((org.dccio.core.impl.DccIoServiceImpl) service).openThrottle(null, address, longAddress);
-                    sendJson(exchange, 200, "{\"id\":\"" + escape(throttleId) + "\",\"status\":\"ok\"}");
-                } catch (NumberFormatException e) {
-                    sendJson(exchange, 400, "{\"error\":\"Invalid address: " + escape(e.getMessage()) + "\"}");
-                } catch (IOException e) {
-                    sendJson(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
-                }
-            } else if (path.startsWith("/api/throttles/")) {
-                // Handle throttle operations: /api/throttles/{id}/speed, /direction, /function, or DELETE
-                String rest = path.substring("/api/throttles/".length());
-                String throttleId;
-                String operation = null;
-                int lastSlash = rest.lastIndexOf('/');
-                if (lastSlash >= 0) {
-                    throttleId = rest.substring(0, lastSlash);
-                    operation = rest.substring(lastSlash + 1);
-                } else {
-                    throttleId = rest;
-                }
-                
-                org.dccio.core.ThrottleSession throttle = ((org.dccio.core.impl.DccIoServiceImpl) service).getThrottle(throttleId);
-                if (throttle == null) {
-                    sendJson(exchange, 404, "{\"error\":\"Throttle not found\"}");
-                    return;
-                }
-                
-                if ("DELETE".equalsIgnoreCase(method)) {
-                    // Close throttle
-                    ((org.dccio.core.impl.DccIoServiceImpl) service).closeThrottle(throttleId);
-                    sendJson(exchange, 200, "{\"status\":\"ok\"}");
-                } else if ("POST".equalsIgnoreCase(method) && "speed".equals(operation)) {
-                    // Set speed
-                    Map<String, String> q = queryParams(exchange.getRequestURI());
-                    String speedStr = q.get("value");
-                    if (speedStr == null) {
-                        sendJson(exchange, 400, "{\"error\":\"Missing value\"}");
-                        return;
-                    }
-                    try {
-                        float speed = Float.parseFloat(speedStr);
-                        if (speed < 0 || speed > 1) {
-                            sendJson(exchange, 400, "{\"error\":\"Speed must be between 0 and 1\"}");
-                            return;
-                        }
-                        throttle.setSpeed(speed);
-                        sendJson(exchange, 200, "{\"status\":\"ok\"}");
-                    } catch (NumberFormatException e) {
-                        sendJson(exchange, 400, "{\"error\":\"Invalid speed value\"}");
-                    } catch (IOException e) {
-                        sendJson(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
-                    }
-                } else if ("POST".equalsIgnoreCase(method) && "direction".equals(operation)) {
-                    // Set direction
-                    Map<String, String> q = queryParams(exchange.getRequestURI());
-                    String forwardStr = q.get("forward");
-                    if (forwardStr == null) {
-                        sendJson(exchange, 400, "{\"error\":\"Missing forward parameter\"}");
-                        return;
-                    }
-                    try {
-                        boolean forward = "true".equalsIgnoreCase(forwardStr);
-                        throttle.setDirection(forward);
-                        sendJson(exchange, 200, "{\"status\":\"ok\"}");
-                    } catch (IOException e) {
-                        sendJson(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
-                    }
-                } else if ("POST".equalsIgnoreCase(method) && "function".equals(operation)) {
-                    // Set function
-                    Map<String, String> q = queryParams(exchange.getRequestURI());
-                    String funcStr = q.get("number");
-                    String onStr = q.get("on");
-                    if (funcStr == null || onStr == null) {
-                        sendJson(exchange, 400, "{\"error\":\"Missing number or on parameter\"}");
-                        return;
-                    }
-                    try {
-                        int funcNum = Integer.parseInt(funcStr);
-                        boolean on = "true".equalsIgnoreCase(onStr);
-                        throttle.setFunction(funcNum, on);
-                        sendJson(exchange, 200, "{\"status\":\"ok\"}");
-                    } catch (NumberFormatException e) {
-                        sendJson(exchange, 400, "{\"error\":\"Invalid function number\"}");
-                    } catch (IOException e) {
-                        sendJson(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
-                    }
-                } else {
-                    sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
-                }
-            } else {
-                sendJson(exchange, 404, "{\"error\":\"Not found\"}");
-            }
-        }
-    }
-
-    private final class AccessoriesHandler extends JsonHandler {
-        @Override
-        protected void handleJson(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            String path = exchange.getRequestURI().getPath();
-            
-            if ("POST".equalsIgnoreCase(method) && "/api/accessories".equals(path)) {
-                // Set turnout state (uses assigned accessory controller automatically)
-                Map<String, String> q = queryParams(exchange.getRequestURI());
-                String addressStr = q.get("address");
-                String closedStr = q.get("closed");
-                
-                if (addressStr == null || closedStr == null) {
-                    sendJson(exchange, 400, "{\"error\":\"Missing address or closed parameter\"}");
-                    return;
-                }
-                
-                // Get assigned accessory controller
-                CommandStationConnection conn = ((org.dccio.core.impl.DccIoServiceImpl) service).getAccessoryController();
-                if (conn == null) {
-                    sendJson(exchange, 400, "{\"error\":\"No accessory controller available\"}");
-                    return;
-                }
-                
-                if (!conn.isConnected()) {
-                    sendJson(exchange, 400, "{\"error\":\"Accessory controller not connected\"}");
-                    return;
-                }
-                
-                org.dccio.core.AccessoryController accessoryController = conn.getAccessoryController();
-                if (accessoryController == null) {
-                    sendJson(exchange, 400, "{\"error\":\"Accessory controller not available\"}");
-                    return;
-                }
-                
-                try {
-                    int address = Integer.parseInt(addressStr);
-                    boolean closed = "true".equalsIgnoreCase(closedStr);
-                    accessoryController.setTurnout(address, closed);
-                    sendJson(exchange, 200, "{\"status\":\"ok\",\"address\":" + address + ",\"closed\":" + closed + "}");
-                } catch (NumberFormatException e) {
-                    sendJson(exchange, 400, "{\"error\":\"Invalid address\"}");
-                } catch (IOException e) {
-                    sendJson(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
-                }
-            } else {
-                sendJson(exchange, 404, "{\"error\":\"Not found\"}");
-            }
-        }
-    }
 
     private final class DiscoverHandler extends JsonHandler {
         @Override

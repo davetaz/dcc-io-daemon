@@ -325,16 +325,27 @@ async function setAccessory(closed) {
     showStatus('Please enter an address', 'error');
     return;
   }
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showStatus('WebSocket not connected', 'error');
+    return;
+  }
   try {
-    const res = await fetch('/api/accessories?address=' + address + '&closed=' + closed, { method: 'POST' });
-    const data = await res.json();
-    if (res.ok) {
-      const state = closed ? 'CLOSED' : 'THROWN';
-      updateAccessoryStatus('Accessory ' + address + ' set to ' + state);
-      showStatus('Accessory ' + address + ' set to ' + state, 'success');
-    } else {
-      showStatus('Error: ' + (data.error || 'Unknown error'), 'error');
-    }
+    const state = closed ? 'closed' : 'thrown';
+    const message = {
+      id: 'accessory-' + Date.now(),
+      type: 'accessories',
+      method: 'post',
+      data: {
+        commands: [
+          {
+            address: address,
+            state: state
+          }
+        ]
+      }
+    };
+    ws.send(JSON.stringify(message));
+    updateAccessoryStatus('Accessory ' + address + ' set to ' + (closed ? 'CLOSED' : 'THROWN'));
   } catch (err) {
     showStatus('Error: ' + err.message, 'error');
   }

@@ -152,22 +152,6 @@ If only one controller is connected, it's automatically assigned both roles. If 
 - `GET /api/ports` - List available serial/USB ports
 - `GET /api/discover` - Discover connected controllers (auto-detection)
 
-### Throttle Control
-
-- `GET /api/throttles` - List all open throttles
-- `POST /api/throttles?address={addr}&longAddress={true|false}` - Open a throttle
-  - Uses assigned throttle controller automatically
-- `POST /api/throttles/{id}/speed?value={0.0-1.0}` - Set speed (0.0 = stop, 1.0 = full)
-- `POST /api/throttles/{id}/direction?forward={true|false}` - Set direction
-- `POST /api/throttles/{id}/function?number={0-28}&on={true|false}` - Set function state
-- `DELETE /api/throttles/{id}` - Close throttle
-
-### Accessory Control
-
-- `POST /api/accessories?address={addr}&closed={true|false}` - Set turnout state
-  - Uses assigned accessory controller automatically
-  - `closed=true` = CLOSED, `closed=false` = THROWN
-
 ### Real-Time Events
 
 - `GET /api/events` - Server-Sent Events (SSE) stream for real-time updates
