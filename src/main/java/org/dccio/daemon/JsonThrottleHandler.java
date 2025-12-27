@@ -96,19 +96,11 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
         int address = requireInt(data, "address");
         boolean longAddress = data.has("longAddress") && data.get("longAddress").getAsBoolean();
         
-        // Find existing throttle for this address
-        String throttleId = null;
-        ThrottleSession session = null;
-        for (ThrottleSession s : service.getThrottles()) {
-            if (s.getAddress() == address && s.isLongAddress() == longAddress) {
-                session = s;
-                throttleId = sessionId(s);
-                break;
-            }
-        }
-        
+        // Get or create throttle for this address
+        String throttleId = getOrCreateThrottle(address, longAddress);
+        ThrottleSession session = service.getThrottle(throttleId);
         if (session == null) {
-            throw new java.util.NoSuchElementException("No throttle found for address " + address + (longAddress ? " (long)" : ""));
+            throw new IllegalStateException("Failed to get or create throttle for address " + address);
         }
         
         JsonObject response = new JsonObject();

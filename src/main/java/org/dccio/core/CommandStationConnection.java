@@ -73,6 +73,15 @@ public interface CommandStationConnection extends Closeable {
     String getPowerStatus();
 
     /**
+     * Set track power state.
+     *
+     * @param powerState Power state: "ON", "OFF", or "IDLE"
+     * @throws IOException if the power state cannot be set
+     * @throws IllegalArgumentException if the power state is invalid
+     */
+    void setPower(String powerState) throws IOException;
+
+    /**
      * Request command station version information from the command station.
      * This is an asynchronous operation - the version info will be updated
      * when the command station responds.

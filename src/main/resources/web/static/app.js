@@ -127,7 +127,10 @@ async function loadConnections() {
         if (c.connected && (c.powerStatus || connectionPowerStatus[c.id])) {
           const powerStatus = c.powerStatus || connectionPowerStatus[c.id] || 'UNKNOWN';
           const powerIcon = powerStatus === 'ON' ? '🟢' : powerStatus === 'OFF' ? '🔴' : '🟡';
-          html += `<br><small class="power-status">Power: ${powerIcon} ${powerStatus}</small>`;
+          html += `<br><small class="power-status">Power: ${powerIcon} ${powerStatus}</small> `;
+          // Add power control buttons
+          const isOn = powerStatus === 'ON';
+          html += `<button onclick="setPower('${c.id}', '${isOn ? 'OFF' : 'ON'}')" class="btn btn-${isOn ? 'danger' : 'primary'}" style="padding: 4px 10px; font-size: 11px; margin-left: 5px;">Power ${isOn ? 'OFF' : 'ON'}</button>`;
         }
         if (c.connected) {
           html += `<br><small style="color: #666;">Roles: `;
@@ -489,6 +492,14 @@ function updateConnectionPowerStatus(connId, status) {
       if (powerElement) {
         const powerIcon = status === 'ON' ? '🟢' : status === 'OFF' ? '🔴' : '🟡';
         powerElement.textContent = `Power: ${powerIcon} ${status}`;
+        // Update the power button next to it
+        const powerButton = powerElement.nextElementSibling;
+        if (powerButton && powerButton.tagName === 'BUTTON') {
+          const isOn = status === 'ON';
+          powerButton.textContent = `Power ${isOn ? 'OFF' : 'ON'}`;
+          powerButton.className = `btn btn-${isOn ? 'danger' : 'primary'}`;
+          powerButton.onclick = () => setPower(connId, isOn ? 'OFF' : 'ON');
+        }
       }
     }
   });
@@ -508,6 +519,28 @@ async function setControllerRole(connectionId, role, enabled) {
   } catch (err) {
     showStatus('Error: ' + err.message, 'error');
     loadConnections(); // Reload to reset checkboxes
+  }
+}
+
+async function setPower(connectionId, powerState) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showStatus('WebSocket not connected', 'error');
+    return;
+  }
+  try {
+    const message = {
+      id: 'power-' + connectionId + '-' + Date.now(),
+      type: 'status',
+      method: 'post',
+      data: {
+        connectionId: connectionId,
+        power: powerState
+      }
+    };
+    ws.send(JSON.stringify(message));
+    showStatus(`Setting power to ${powerState} for ${connectionId}...`, 'success');
+  } catch (err) {
+    showStatus('Error: ' + err.message, 'error');
   }
 }
 
@@ -597,6 +630,22 @@ function connectWebSocket() {
       const parsed = JSON.parse(evt.data);
       addWsMessage(JSON.stringify(parsed, null, 2), 'in');
       applyWsDelta(parsed);
+      // Handle direct responses to power control requests
+      if (parsed.id && parsed.id.startsWith('power-')) {
+        if (parsed.type === 'status' && parsed.data) {
+          const connections = parsed.data.connections || [];
+          connections.forEach(conn => {
+            if (conn.powerStatus) {
+              connectionPowerStatus[conn.id] = conn.powerStatus;
+              updateConnectionPowerStatus(conn.id, conn.powerStatus);
+              showStatus(`Power set to ${conn.powerStatus} for ${conn.id}`, 'success');
+            }
+          });
+        } else if (parsed.type === 'error') {
+          const errorMsg = parsed.data?.message || 'Unknown error';
+          showStatus(`Power control error: ${errorMsg}`, 'error');
+        }
+      }
     } catch (e) {
       addWsMessage(evt.data, 'in');
     }
@@ -655,6 +704,16 @@ function escapeHtml(str) {
 function applyWsDelta(msg) {
   if (!msg || !msg.type) return;
   if (msg.type === 'status') {
+    // Handle status patch broadcasts (power changes, etc.)
+    if (msg.method === 'patch' && msg.data && msg.data.connections) {
+      // Update power status for changed connections
+      msg.data.connections.forEach(conn => {
+        if (conn.powerStatus) {
+          connectionPowerStatus[conn.id] = conn.powerStatus;
+          updateConnectionPowerStatus(conn.id, conn.powerStatus);
+        }
+      });
+    }
     // refresh connections view on status broadcast
     loadConnections();
   } else if (msg.type === 'throttle') {
@@ -790,6 +849,17 @@ function loadExampleMessage() {
       example = JSON.stringify({ 
         id: 'req-8',
         list: 'accessories' 
+      }, null, 2);
+      break;
+    case 'power-post':
+      example = JSON.stringify({
+        id: 'req-9',
+        type: 'status',
+        method: 'post',
+        data: {
+          connectionId: 'elite1',
+          power: 'OFF'
+        }
       }, null, 2);
       break;
   }

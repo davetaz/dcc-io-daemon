@@ -125,6 +125,11 @@ class JsonStatusHandlerTest {
         }
 
         @Override
+        public void setPower(String powerState) throws IOException {
+            // Test implementation - no-op
+        }
+
+        @Override
         public void requestVersion() throws IOException {
         }
 

@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.dccio.core.CommandStationConnection;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Locale;
@@ -166,12 +167,66 @@ public class JsonStatusHandler implements JsonMessageHandler.TypeHandler {
     @Override
     public JsonObject handle(String method, JsonObject data) {
         String normalized = method == null ? "get" : method.toLowerCase(Locale.ROOT);
+        if ("post".equals(normalized)) {
+            return handlePost(data);
+        }
         if (!"get".equals(normalized) && !"list".equals(normalized)) {
             throw new IllegalArgumentException("Unsupported method '" + method + "'");
         }
         // Don't broadcast status queries - only return to requester
         // Broadcasting should only happen for actual state changes
         return buildStatus();
+    }
+
+    private JsonObject handlePost(JsonObject data) {
+        // Check for power control command
+        if (data.has("power") && data.has("connectionId")) {
+            String connectionId = data.get("connectionId").getAsString();
+            String powerState = data.get("power").getAsString();
+            
+            // Find the connection
+            CommandStationConnection connection = null;
+            for (CommandStationConnection c : provider.getConnections()) {
+                if (c.getId().equals(connectionId)) {
+                    connection = c;
+                    break;
+                }
+            }
+            
+            if (connection == null) {
+                throw new IllegalArgumentException("Connection not found: " + connectionId);
+            }
+            
+            if (!connection.isConnected()) {
+                throw new IllegalStateException("Connection not connected: " + connectionId);
+            }
+            
+            // Get previous state for delta calculation
+            Map<String, JsonObject> previousState = getCurrentState();
+            
+            // Set power
+            try {
+                connection.setPower(powerState);
+            } catch (IOException e) {
+                throw new IllegalArgumentException("Failed to set power: " + e.getMessage(), e);
+            }
+            
+            // Broadcast status patch with updated power status
+            broadcastStatusPatch(previousState);
+            
+            // Return updated status for this connection
+            JsonObject response = new JsonObject();
+            response.addProperty("type", "status");
+            JsonObject responseData = new JsonObject();
+            responseData.addProperty("status", "ok");
+            JsonArray connections = new JsonArray();
+            connections.add(buildConnectionObject(connection, false));
+            responseData.add("connections", connections);
+            response.add("data", responseData);
+            return response;
+        }
+        
+        throw new IllegalArgumentException("POST to status requires 'connectionId' and 'power' fields");
     }
 
     public JsonObject buildStatus() {

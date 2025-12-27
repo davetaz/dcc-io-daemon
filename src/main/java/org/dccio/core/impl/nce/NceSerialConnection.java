@@ -166,6 +166,38 @@ public final class NceSerialConnection extends BaseCommandStationConnection {
         return "UNKNOWN";
     }
 
+    @Override
+    public void setPower(String powerState) throws IOException {
+        if (!connected) {
+            throw new IOException("Not connected");
+        }
+        PowerManager pm = memo.getPowerManager();
+        if (pm == null) {
+            throw new IOException("PowerManager not available");
+        }
+        
+        int powerValue;
+        switch (powerState.toUpperCase()) {
+            case "ON":
+                powerValue = PowerManager.ON;
+                break;
+            case "OFF":
+                powerValue = PowerManager.OFF;
+                break;
+            case "IDLE":
+                powerValue = PowerManager.IDLE;
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid power state: " + powerState + ". Must be ON, OFF, or IDLE");
+        }
+        
+        try {
+            pm.setPower(powerValue);
+        } catch (jmri.JmriException e) {
+            throw new IOException("Failed to set power: " + e.getMessage(), e);
+        }
+    }
+
     private void onPowerChange(PropertyChangeEvent evt) {
         if (PowerManager.POWER.equals(evt.getPropertyName())) {
             Map<String, Object> payload = new HashMap<>();

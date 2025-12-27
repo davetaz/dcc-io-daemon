@@ -215,6 +215,46 @@ Response:
 }
 ```
 
+**Set track power (POST):**
+
+Control track power for a specific connection:
+
+```json
+{
+  "id": "req-2",
+  "type": "status",
+  "method": "post",
+  "data": {
+    "connectionId": "elite1",
+    "power": "OFF"
+  }
+}
+```
+
+Valid power values: `"ON"`, `"OFF"`, or `"IDLE"`.
+
+Response:
+
+```json
+{
+  "id": "req-2",
+  "type": "status",
+  "data": {
+    "status": "ok",
+    "connections": [
+      {
+        "id": "elite1",
+        "connected": true,
+        "powerStatus": "OFF",
+        "roles": ["throttles", "accessories"]
+      }
+    ]
+  }
+}
+```
+
+The server will automatically broadcast a status patch to all connected clients when power changes.
+
 **Status patch broadcasts:**
 
 The server automatically broadcasts status patches (`type: "status", method: "patch"`) when:

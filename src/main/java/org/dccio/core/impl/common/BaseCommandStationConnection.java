@@ -98,6 +98,16 @@ public abstract class BaseCommandStationConnection implements CommandStationConn
     }
 
     @Override
+    public void setPower(String powerState) throws IOException {
+        // Default implementation: power control is protocol-specific
+        // Subclasses should override if they support power control
+        if (!connected) {
+            throw new IOException("Not connected");
+        }
+        throw new IOException("Power control not supported for this connection type");
+    }
+
+    @Override
     public void requestVersion() throws IOException {
         // Default implementation: version requests are protocol-specific
         // Subclasses should override if they support version requests

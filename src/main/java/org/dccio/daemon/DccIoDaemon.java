@@ -13,6 +13,7 @@ import org.dccio.daemon.DccAccessoryService;
 import org.dccio.daemon.JsonStatusHandler;
 import com.google.gson.JsonObject;
 import jmri.Throttle;
+import java.io.IOException;
 
 /**
  * Entry point for the standalone DCC IO daemon.
@@ -165,10 +166,26 @@ public final class DccIoDaemon {
                 }
             }
             
+            // If throttle doesn't exist, try to create it (controller opened a throttle)
+            // Note: If the controller is already controlling this throttle, opening it will fail
+            // with "in use" error. In that case, we skip tracking it since the controller has control.
+            boolean throttleJustCreated = false;
             if (session == null) {
-                // Throttle not found - might be a new throttle opened on controller
-                // We can't broadcast without a session, so skip
-                return;
+                try {
+                    String throttleId = throttleService.openThrottle(null, address, longAddress);
+                    session = throttleService.getThrottle(throttleId);
+                    if (session == null) {
+                        // Failed to create throttle, skip broadcast
+                        return;
+                    }
+                    throttleJustCreated = true;
+                } catch (IOException e) {
+                    // Throttle creation failed - likely because controller is already controlling it
+                    // ("address in use"). We can't track throttles that are directly controlled
+                    // by the controller without our session, so skip the broadcast.
+                    // The console will still show the controller's messages.
+                    return;
+                }
             }
             
             // Build throttle ID
@@ -182,6 +199,11 @@ public final class DccIoDaemon {
             data.addProperty("throttle", throttleId);
             data.addProperty("address", address);
             data.addProperty("longAddress", longAddress);
+            
+            // If throttle was just created, include opened flag
+            if (throttleJustCreated) {
+                data.addProperty("opened", true);
+            }
             
             Object newValue = payload.get("newValue");
             
