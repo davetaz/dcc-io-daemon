@@ -1,4 +1,4 @@
-38c7ad182965ec00257c6e2a4d680f3b  lib/systemd/system/dcc-io-daemon.service
-b5091990fecfe297ccfd101d7d26ee6f  usr/lib/dcc-io-daemon/dcc-io-daemon-0.1.0-SNAPSHOT-jar-with-dependencies.jar
+aa43ad84bb4e418999eb11021fd7a319  lib/systemd/system/dcc-io-daemon.service
+96aacc175e15dd721e85b43b3d3eefe1  usr/lib/dcc-io-daemon/dcc-io-daemon-0.2.0-jar-with-dependencies.jar
 34fbdd8faa42673377ed8b16f23e7471  usr/local/bin/jmri-install
-755570d1433b07c93fa4fb929f8a760a  usr/share/doc/dcc-io-daemon/changelog.Debian.gz
+15cc0cb689d54448be524871e655d384  usr/share/doc/dcc-io-daemon/changelog.Debian.gz

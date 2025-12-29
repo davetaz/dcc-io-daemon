@@ -112,19 +112,49 @@ During purge, you'll be prompted whether to remove JMRI as well.
 
 ### Service fails to start
 
-1. Check if JMRI is installed:
+1. Check service status:
+   ```bash
+   sudo systemctl status dcc-io-daemon
+   ```
+
+2. View recent logs (last 50 lines):
+   ```bash
+   sudo journalctl -u dcc-io-daemon -n 50
+   ```
+
+3. View logs in real-time (follow mode):
+   ```bash
+   sudo journalctl -u dcc-io-daemon -f
+   ```
+
+4. View all logs since boot:
+   ```bash
+   sudo journalctl -u dcc-io-daemon -b
+   ```
+
+5. View logs with timestamps:
+   ```bash
+   sudo journalctl -u dcc-io-daemon --since "1 hour ago"
+   ```
+
+6. Check if JMRI is installed:
    ```bash
    ls -la /opt/jmri/current
    ```
 
-2. If not installed, run:
+7. If not installed, run:
    ```bash
    sudo jmri-install
    ```
 
-3. Check service logs:
+8. Check if the JAR file exists:
    ```bash
-   sudo journalctl -u dcc-io-daemon -n 50
+   ls -la /usr/lib/dcc-io-daemon/
+   ```
+
+9. Test the service manually (as the dcc-io user):
+   ```bash
+   sudo -u dcc-io java -cp "/usr/lib/dcc-io-daemon/dcc-io-daemon-*-jar-with-dependencies.jar:/opt/jmri/current/jmri.jar:/opt/jmri/current/lib/*" org.dccio.daemon.DccIoDaemon 9000
    ```
 
 ### JMRI installation fails

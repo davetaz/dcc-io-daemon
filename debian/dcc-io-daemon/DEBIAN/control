@@ -1,8 +1,8 @@
 Package: dcc-io-daemon
-Version: 0.1.0-1
+Version: 0.2.0-1
 Architecture: all
 Maintainer: DCC IO Daemon Maintainer <maintainer@example.com>
-Installed-Size: 562
+Installed-Size: 564
 Depends: default-jre-headless (>= 11), curl, tar, gzip
 Section: electronics
 Priority: optional

@@ -3,6 +3,13 @@
 export DH_VERBOSE = 1
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
+# Load version from version.sh
+VERSION_INFO := $(shell bash version.sh all)
+MAVEN_VERSION := $(shell bash version.sh maven)
+DEBIAN_VERSION := $(shell bash version.sh debian)
+DEBIAN_FULL_VERSION := $(shell bash version.sh debian-full)
+JAR_FILENAME := $(shell bash version.sh jar-filename)
+
 %:
 	dh $@
 
@@ -13,13 +20,14 @@ override_dh_auto_build:
 	# Build the JAR using Maven
 	# Note: We don't need JMRI at build time for the package
 	# JMRI will be installed separately via jmri-install script
-	mvn clean package -DskipTests || true
+	# Use a local Maven repository in the build directory to avoid permission issues with fakeroot
+	mvn clean package -DskipTests -Dmaven.repo.local=$$(pwd)/.m2/repository || true
 	# If build fails due to missing JMRI, that's OK - we'll handle it at runtime
 
 override_dh_auto_install:
 	# Install the JAR file to debian/tmp (where dh_install expects it)
 	mkdir -p debian/tmp/usr/lib/dcc-io-daemon
-	cp target/dcc-io-daemon-0.1.0-SNAPSHOT-jar-with-dependencies.jar \
+	cp target/$(JAR_FILENAME) \
 	   debian/tmp/usr/lib/dcc-io-daemon/ || \
 	   echo "Warning: JAR file not found. Package may be incomplete."
 	
@@ -28,10 +36,20 @@ override_dh_auto_install:
 	cp scripts/jmri-install debian/tmp/usr/local/bin/
 	chmod +x debian/tmp/usr/local/bin/jmri-install
 	
-	# Install systemd service file
+	# Install systemd service file (with version substitution)
 	mkdir -p debian/tmp/lib/systemd/system
-	cp debian/dcc-io-daemon.service debian/tmp/lib/systemd/system/
+	test -f debian/dcc-io-daemon.service || (echo "ERROR: debian/dcc-io-daemon.service not found" >&2; exit 1)
+	# Get JAR filename and replace placeholder
+	JAR_FILE=$$(cd $$(pwd) && bash version.sh jar-filename); \
+	echo "Replacing JAR_FILENAME_PLACEHOLDER with: $$JAR_FILE"; \
+	sed "s|JAR_FILENAME_PLACEHOLDER|$$JAR_FILE|g" \
+		debian/dcc-io-daemon.service > debian/tmp/lib/systemd/system/dcc-io-daemon.service; \
+	echo "Verifying replacement:"; \
+	grep -q "JAR_FILENAME_PLACEHOLDER" debian/tmp/lib/systemd/system/dcc-io-daemon.service && \
+		echo "WARNING: Placeholder still found in service file!" || \
+		echo "Placeholder successfully replaced"
 
 override_dh_auto_clean:
-	mvn clean || true
+	# Use a local Maven repository in the build directory to avoid permission issues with fakeroot
+	mvn clean -Dmaven.repo.local=$$(pwd)/.m2/repository || true
 
