@@ -1,0 +1,22 @@
+Package: dcc-io-daemon
+Version: 0.1.0-1
+Architecture: all
+Maintainer: DCC IO Daemon Maintainer <maintainer@example.com>
+Installed-Size: 562
+Depends: default-jre-headless (>= 11), curl, tar, gzip
+Section: electronics
+Priority: optional
+Homepage: https://github.com/yourusername/dcc-io-daemon
+Description: DCC IO Daemon - RESTful API for DCC command stations
+ A standalone Java daemon that provides a simple, clean API for controlling
+ DCC command stations by leveraging JMRI's rich controller support without
+ the complexity of JMRI's full object model and data structures.
+ .
+ Features:
+  - Auto-discovery of USB/serial controllers
+  - RESTful JSON API
+  - WebSocket support for real-time updates
+  - Web-based configuration interface
+  - Multi-controller support with role assignment
+ .
+ Requires JMRI to be installed separately using the jmri-install script.

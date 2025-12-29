@@ -1,0 +1,65 @@
+#!/bin/bash
+set -e
+
+# Post-installation script for dcc-io-daemon
+
+# Create dcc-io system user if it doesn't exist
+if ! id -u dcc-io >/dev/null 2>&1; then
+    echo "Creating dcc-io system user..."
+    useradd -r -s /bin/false -d /var/lib/dcc-io-daemon -c "DCC IO Daemon" dcc-io
+fi
+
+# Add dcc-io user to groups needed for hardware access
+# dialout: for serial/USB serial devices (ttyUSB*, ttyACM*, etc.)
+# plugdev: for USB devices (on some systems)
+# gpio: for GPIO access (Raspberry Pi)
+# i2c: for I2C bus access (Raspberry Pi)
+# spi: for SPI bus access (Raspberry Pi)
+# input: for input devices (sometimes needed)
+for group in dialout plugdev gpio i2c spi input; do
+    if getent group "$group" >/dev/null 2>&1; then
+        if ! id -nG dcc-io | grep -qw "$group"; then
+            echo "Adding dcc-io user to $group group for hardware access..."
+            usermod -a -G "$group" dcc-io
+        fi
+    fi
+done
+
+# Create working directory
+mkdir -p /var/lib/dcc-io-daemon
+chown dcc-io:dcc-io /var/lib/dcc-io-daemon
+chmod 755 /var/lib/dcc-io-daemon
+
+# Create config directory
+mkdir -p /etc/dcc-io-daemon
+chown root:root /etc/dcc-io-daemon
+chmod 755 /etc/dcc-io-daemon
+
+# Reload systemd to pick up new service file
+systemctl daemon-reload
+
+# Check if JMRI is installed
+if [ ! -L /opt/jmri/current ] && [ ! -d /opt/jmri/current ]; then
+    echo ""
+    echo "WARNING: JMRI is not installed."
+    echo "Please run 'sudo jmri-install' to install JMRI before starting the service."
+    echo ""
+else
+    # Enable and start the service if JMRI is available
+    if systemctl is-enabled dcc-io-daemon >/dev/null 2>&1; then
+        echo "Service already enabled."
+    else
+        systemctl enable dcc-io-daemon
+    fi
+    
+    if systemctl is-active dcc-io-daemon >/dev/null 2>&1; then
+        echo "Service already running."
+    else
+        echo "Starting dcc-io-daemon service..."
+        systemctl start dcc-io-daemon || echo "Failed to start service. Check logs with: journalctl -u dcc-io-daemon"
+    fi
+fi
+
+# DEBHELPER
+exit 0
+

@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -28,6 +29,12 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
     // Key: address string (e.g., "3" or "754:true"), Value: LockInfo
     private final Map<String, LockInfo> speedDirectionLocks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timeoutExecutor = Executors.newScheduledThreadPool(1);
+    
+    // Throttle speed command throttling: send at most one command every interval
+    // Key: throttleId, Value: PendingSpeedInfo
+    private final Map<String, PendingSpeedInfo> pendingSpeedChanges = new ConcurrentHashMap<>();
+    private final long speedCommandIntervalMs;
+    private static final long DEFAULT_SPEED_COMMAND_INTERVAL_MS = 250;
 
     private static class LockInfo {
         final String clientId;
@@ -38,9 +45,37 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
             this.lastUpdateTime = System.currentTimeMillis();
         }
     }
+    
+    private static class PendingSpeedInfo {
+        volatile float pendingSpeed;
+        volatile ScheduledFuture<?> scheduledTask;
+        final String throttleId;
+        final ThrottleSession session;
+        final int address;
+        final boolean longAddress;
+        final String connectionId;
+        
+        PendingSpeedInfo(String throttleId, ThrottleSession session, int address, boolean longAddress, String connectionId) {
+            this.throttleId = throttleId;
+            this.session = session;
+            this.address = address;
+            this.longAddress = longAddress;
+            this.connectionId = connectionId;
+        }
+    }
 
     public JsonThrottleHandler(ThrottleService service) {
+        this(service, DEFAULT_SPEED_COMMAND_INTERVAL_MS);
+    }
+    
+    /**
+     * Constructor for testing - allows setting the speed command interval.
+     * @param service the throttle service
+     * @param speedCommandIntervalMs interval in milliseconds (0 to disable throttling)
+     */
+    JsonThrottleHandler(ThrottleService service, long speedCommandIntervalMs) {
         this.service = service;
+        this.speedCommandIntervalMs = speedCommandIntervalMs;
         // Clean up expired locks every 500ms
         timeoutExecutor.scheduleAtFixedRate(this::cleanupExpiredLocks, 500, 500, TimeUnit.MILLISECONDS);
     }
@@ -50,6 +85,13 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
     }
 
     public void shutdown() {
+        // Cancel all pending speed change tasks
+        for (PendingSpeedInfo info : pendingSpeedChanges.values()) {
+            if (info.scheduledTask != null) {
+                info.scheduledTask.cancel(false);
+            }
+        }
+        pendingSpeedChanges.clear();
         timeoutExecutor.shutdown();
     }
 
@@ -145,17 +187,17 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
         Boolean newDirection = null;
         JsonObject functionsChanged = null;
 
-        // Handle speed
+        // Handle speed with throttling (250ms interval)
         if (data.has("speed")) {
             float speed = data.get("speed").getAsFloat();
             validateSpeed(speed);
-            try {
-                session.setSpeed(speed);
-                changed = true;
-                newSpeed = speed;
-            } catch (IOException e) {
-                throw new IllegalArgumentException(e.getMessage(), e);
-            }
+            
+            // Queue the speed change for throttling
+            queueSpeedChange(throttleId, session, address, longAddress, speed);
+            
+            // Return the requested speed in response (even though it may not be sent yet)
+            changed = true;
+            newSpeed = speed;
         }
 
         // Handle direction
@@ -264,6 +306,88 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
     private void validateSpeed(float speed) {
         if (speed < 0 || speed > 1) {
             throw new IllegalArgumentException("Speed must be between 0.0 and 1.0");
+        }
+    }
+    
+    /**
+     * Queue a speed change for throttling. Sends at most one command every interval.
+     * If interval is 0, sends immediately without throttling.
+     * If a command is already scheduled, just updates the pending speed value.
+     */
+    private void queueSpeedChange(String throttleId, ThrottleSession session, int address, boolean longAddress, float speed) {
+        // If throttling is disabled (interval = 0), send immediately
+        if (speedCommandIntervalMs <= 0) {
+            try {
+                session.setSpeed(speed);
+                if (broadcaster != null) {
+                    broadcastDelta(
+                        throttleId,
+                        session.getConnectionId(),
+                        address,
+                        longAddress,
+                        false,
+                        speed,
+                        null,
+                        null,
+                        false,
+                        session
+                    );
+                }
+            } catch (IOException e) {
+                throw new IllegalArgumentException(e.getMessage(), e);
+            }
+            return;
+        }
+        
+        PendingSpeedInfo info = pendingSpeedChanges.computeIfAbsent(
+            throttleId,
+            k -> new PendingSpeedInfo(throttleId, session, address, longAddress, session.getConnectionId())
+        );
+        
+        // Update the pending speed to the latest value
+        info.pendingSpeed = speed;
+        
+        // If no task is scheduled, schedule one
+        if (info.scheduledTask == null || info.scheduledTask.isDone()) {
+            info.scheduledTask = timeoutExecutor.schedule(() -> {
+                sendPendingSpeedChange(throttleId);
+            }, speedCommandIntervalMs, TimeUnit.MILLISECONDS);
+        }
+        // If task is already scheduled, we just update pendingSpeed above
+        // and let the existing task send the latest value when it fires
+    }
+    
+    /**
+     * Send the pending speed change for a throttle and clean up.
+     */
+    private void sendPendingSpeedChange(String throttleId) {
+        PendingSpeedInfo info = pendingSpeedChanges.remove(throttleId);
+        if (info == null) {
+            return;
+        }
+        
+        try {
+            // Send the latest pending speed
+            info.session.setSpeed(info.pendingSpeed);
+            
+            // Broadcast the change
+            if (broadcaster != null) {
+                broadcastDelta(
+                    info.throttleId,
+                    info.connectionId,
+                    info.address,
+                    info.longAddress,
+                    false,
+                    info.pendingSpeed,
+                    null, // direction unchanged
+                    null, // no function changes
+                    false,
+                    info.session
+                );
+            }
+        } catch (IOException e) {
+            // Log error but don't throw - this is async
+            System.err.println("Error sending throttled speed change for throttle " + throttleId + ": " + e.getMessage());
         }
     }
 

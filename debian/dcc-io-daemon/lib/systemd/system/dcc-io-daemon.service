@@ -1,0 +1,38 @@
+[Unit]
+Description=DCC IO Daemon - RESTful API for DCC command stations
+After=network.target
+
+[Service]
+Type=simple
+User=dcc-io
+Group=dcc-io
+WorkingDirectory=/var/lib/dcc-io-daemon
+Environment="JMRI_HOME=/opt/jmri/current"
+Environment="JAVA_OPTS=-Xmx512m"
+
+# Build classpath with JMRI
+# Note: Wildcards in classpath need to be expanded by shell
+ExecStart=/bin/bash -c 'CLASSPATH="/usr/lib/dcc-io-daemon/dcc-io-daemon-0.1.0-SNAPSHOT-jar-with-dependencies.jar:/opt/jmri/current/jmri.jar"; if [ -d /opt/jmri/current/lib ]; then for jar in /opt/jmri/current/lib/*.jar; do [ -f "$jar" ] && CLASSPATH="$CLASSPATH:$jar"; done; fi; exec /usr/bin/java -cp "$CLASSPATH" org.dccio.daemon.DccIoDaemon 9000'
+
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dcc-io-daemon
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dcc-io-daemon
+
+# Allow access to USB, serial devices, and hardware interfaces (GPIO, I2C, SPI)
+SupplementaryGroups=dialout plugdev gpio i2c spi input
+
+# Allow access to device files (USB, serial ports)
+PrivateDevices=false
+
+[Install]
+WantedBy=multi-user.target
+

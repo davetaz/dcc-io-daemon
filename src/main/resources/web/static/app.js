@@ -172,6 +172,7 @@ async function loadConnections() {
 }
 
 let throttleState = { speed: 0, forward: true, functions: {} };
+let isDraggingThrottle = false; // Track if user is actively dragging the throttle slider
 
 async function getThrottleStatus() {
   const address = parseInt(document.getElementById('throttleAddress').value);
@@ -314,6 +315,44 @@ async function updateThrottleSpeed(value) {
   } catch (err) {
     console.error('Error setting speed:', err);
   }
+}
+
+// Track when user starts/stops dragging the throttle slider
+function setupThrottleSliderDragTracking() {
+  // Wait for DOM to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupThrottleSliderDragTracking);
+    return;
+  }
+  
+  const slider = document.getElementById('throttleSpeed');
+  if (!slider) {
+    // Retry after a short delay if element doesn't exist yet
+    setTimeout(setupThrottleSliderDragTracking, 100);
+    return;
+  }
+  
+  // Mouse events
+  slider.addEventListener('mousedown', () => {
+    isDraggingThrottle = true;
+  });
+  slider.addEventListener('mouseup', () => {
+    isDraggingThrottle = false;
+  });
+  slider.addEventListener('mouseleave', () => {
+    isDraggingThrottle = false;
+  });
+  
+  // Touch events for mobile
+  slider.addEventListener('touchstart', () => {
+    isDraggingThrottle = true;
+  });
+  slider.addEventListener('touchend', () => {
+    isDraggingThrottle = false;
+  });
+  slider.addEventListener('touchcancel', () => {
+    isDraggingThrottle = false;
+  });
 }
 
 function updateThrottleStatus(message) {
@@ -723,7 +762,8 @@ function applyWsDelta(msg) {
     if (msg.method === 'patch' && msg.data) {
       // Check if this update is for the current address
       if (msg.data.address === currentAddress && msg.data.longAddress === currentLongAddress) {
-        if (msg.data.speed !== undefined) {
+        // Ignore speed patches while user is actively dragging the slider
+        if (msg.data.speed !== undefined && !isDraggingThrottle) {
           throttleState.speed = msg.data.speed;
           const percent = Math.round(msg.data.speed * 100);
           document.getElementById('throttleSpeed').value = percent;
@@ -876,4 +916,5 @@ setInterval(loadPorts, 5000);
 connectEventStream();
 connectWebSocket();
 initThrottleFunctions();
+setupThrottleSliderDragTracking();
 

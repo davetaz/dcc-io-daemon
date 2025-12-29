@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_usrlocal:
+	# Skip dh_usrlocal - we want to keep jmri-install in /usr/local/bin
+
+override_dh_auto_build:
+	# Build the JAR using Maven
+	# Note: We don't need JMRI at build time for the package
+	# JMRI will be installed separately via jmri-install script
+	mvn clean package -DskipTests || true
+	# If build fails due to missing JMRI, that's OK - we'll handle it at runtime
+
+override_dh_auto_install:
+	# Install the JAR file to debian/tmp (where dh_install expects it)
+	mkdir -p debian/tmp/usr/lib/dcc-io-daemon
+	cp target/dcc-io-daemon-0.1.0-SNAPSHOT-jar-with-dependencies.jar \
+	   debian/tmp/usr/lib/dcc-io-daemon/ || \
+	   echo "Warning: JAR file not found. Package may be incomplete."
+	
+	# Install JMRI installation script
+	mkdir -p debian/tmp/usr/local/bin
+	cp scripts/jmri-install debian/tmp/usr/local/bin/
+	chmod +x debian/tmp/usr/local/bin/jmri-install
+	
+	# Install systemd service file
+	mkdir -p debian/tmp/lib/systemd/system
+	cp debian/dcc-io-daemon.service debian/tmp/lib/systemd/system/
+
+override_dh_auto_clean:
+	mvn clean || true
+

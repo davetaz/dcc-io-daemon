@@ -24,7 +24,8 @@ class JsonThrottleHandlerTest {
     @BeforeEach
     void setUp() {
         service = new FakeThrottleService();
-        handler = new JsonThrottleHandler(service);
+        // Use 0ms interval to disable throttling in tests (immediate execution)
+        handler = new JsonThrottleHandler(service, 0);
         broadcaster = new RecordingBroadcaster();
         handler.setBroadcaster(broadcaster);
         messageHandler = new JsonMessageHandler();
