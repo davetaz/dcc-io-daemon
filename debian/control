@@ -8,7 +8,7 @@ Homepage: https://github.com/yourusername/dcc-io-daemon
 
 Package: dcc-io-daemon
 Architecture: all
-Depends: ${misc:Depends}, default-jre-headless (>= 11), curl, tar, gzip
+Depends: ${misc:Depends}, default-jre-headless (>= 11), curl, jq, tar, gzip
 Description: DCC IO Daemon - RESTful API for DCC command stations
  A standalone Java daemon that provides a simple, clean API for controlling
  DCC command stations by leveraging JMRI's rich controller support without

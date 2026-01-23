@@ -30,6 +30,12 @@ warn() {
     echo -e "${YELLOW}WARN:${NC} $1"
 }
 
+# Parse command line arguments
+INSTALL_LATEST=false
+if [ "$1" = "--latest" ] || [ "$1" = "-l" ]; then
+    INSTALL_LATEST=true
+fi
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     error "This script must be run as root (use sudo)"
@@ -152,52 +158,69 @@ fi
 
 info "Found ${#ALL_RELEASES[@]} releases (${#PRODUCTION_RELEASES[@]} production, ${#TEST_RELEASES[@]} test)"
 
-# Display menu
-echo ""
-echo "Available JMRI Releases:"
-echo "========================"
-echo ""
-echo "PRODUCTION RELEASES:"
-if [ ${#PRODUCTION_RELEASES[@]} -eq 0 ]; then
-    echo "  (none found)"
+# Handle --latest flag or show menu
+if [ "$INSTALL_LATEST" = true ]; then
+    # Automatically select the latest production release
+    if [ ${#PRODUCTION_RELEASES[@]} -eq 0 ]; then
+        error "No production releases found. Cannot install latest release."
+    fi
+    
+    # Get the first production release (which is the latest)
+    IFS='|' read -r SELECTED_VERSION SELECTED_TAG SELECTED_NAME SELECTED_URL <<< "${PRODUCTION_RELEASES[0]}"
+    
+    if [ "$SELECTED_URL" = "NO_TGZ" ]; then
+        error "Latest production release does not have a .tgz file available for download."
+    fi
+    
+    info "Installing latest production release: $SELECTED_NAME ($SELECTED_TAG)"
 else
-    for i in "${!PRODUCTION_RELEASES[@]}"; do
-        IFS='|' read -r VERSION TAG NAME URL <<< "${PRODUCTION_RELEASES[$i]}"
-        if [ "$URL" = "NO_TGZ" ]; then
-            echo "  $((i+1)). $NAME ($TAG) [No .tgz file]"
-        else
-            echo "  $((i+1)). $NAME ($TAG)"
-        fi
-    done
+    # Display menu
+    echo ""
+    echo "Available JMRI Releases:"
+    echo "========================"
+    echo ""
+    echo "PRODUCTION RELEASES:"
+    if [ ${#PRODUCTION_RELEASES[@]} -eq 0 ]; then
+        echo "  (none found)"
+    else
+        for i in "${!PRODUCTION_RELEASES[@]}"; do
+            IFS='|' read -r VERSION TAG NAME URL <<< "${PRODUCTION_RELEASES[$i]}"
+            if [ "$URL" = "NO_TGZ" ]; then
+                echo "  $((i+1)). $NAME ($TAG) [No .tgz file]"
+            else
+                echo "  $((i+1)). $NAME ($TAG)"
+            fi
+        done
+    fi
+
+    echo ""
+    echo "TEST RELEASES:"
+    if [ ${#TEST_RELEASES[@]} -eq 0 ]; then
+        echo "  (none found)"
+    else
+        START_NUM=$((${#PRODUCTION_RELEASES[@]}+1))
+        for i in "${!TEST_RELEASES[@]}"; do
+            IFS='|' read -r VERSION TAG NAME URL <<< "${TEST_RELEASES[$i]}"
+            if [ "$URL" = "NO_TGZ" ]; then
+                echo "  $((START_NUM+i)). $NAME ($TAG) [TEST - No .tgz file]"
+            else
+                echo "  $((START_NUM+i)). $NAME ($TAG) [TEST]"
+            fi
+        done
+    fi
+
+    echo ""
+    read -p "Select release number (1-${#ALL_RELEASES[@]}): " SELECTION
+
+    # Validate selection
+    if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt ${#ALL_RELEASES[@]} ]; then
+        error "Invalid selection"
+    fi
+
+    # Get selected release info
+    SELECTED_INDEX=$((SELECTION-1))
+    IFS='|' read -r SELECTED_VERSION SELECTED_TAG SELECTED_NAME SELECTED_URL <<< "${ALL_RELEASES[$SELECTED_INDEX]}"
 fi
-
-echo ""
-echo "TEST RELEASES:"
-if [ ${#TEST_RELEASES[@]} -eq 0 ]; then
-    echo "  (none found)"
-else
-    START_NUM=$((${#PRODUCTION_RELEASES[@]}+1))
-    for i in "${!TEST_RELEASES[@]}"; do
-        IFS='|' read -r VERSION TAG NAME URL <<< "${TEST_RELEASES[$i]}"
-        if [ "$URL" = "NO_TGZ" ]; then
-            echo "  $((START_NUM+i)). $NAME ($TAG) [TEST - No .tgz file]"
-        else
-            echo "  $((START_NUM+i)). $NAME ($TAG) [TEST]"
-        fi
-    done
-fi
-
-echo ""
-read -p "Select release number (1-${#ALL_RELEASES[@]}): " SELECTION
-
-# Validate selection
-if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt ${#ALL_RELEASES[@]} ]; then
-    error "Invalid selection"
-fi
-
-# Get selected release info
-SELECTED_INDEX=$((SELECTION-1))
-IFS='|' read -r SELECTED_VERSION SELECTED_TAG SELECTED_NAME SELECTED_URL <<< "${ALL_RELEASES[$SELECTED_INDEX]}"
 
 if [ "$SELECTED_URL" = "NO_TGZ" ]; then
     error "Selected release does not have a .tgz file available for download."
@@ -217,17 +240,23 @@ INSTALL_DIR=""
 POTENTIAL_DIR=$(find "$JMRI_BASE_DIR" -maxdepth 1 -type d -name "JMRI.${SELECTED_VERSION}*" | head -1)
 if [ -n "$POTENTIAL_DIR" ] && [ -d "$POTENTIAL_DIR" ]; then
     INSTALL_DIR="$POTENTIAL_DIR"
-    warn "JMRI $SELECTED_VERSION is already installed at $INSTALL_DIR"
-    read -p "Reinstall? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        info "Keeping existing installation"
+    if [ "$INSTALL_LATEST" = true ]; then
+        # When using --latest, skip reinstall prompt and keep existing if same version
+        info "JMRI $SELECTED_VERSION is already installed at $INSTALL_DIR"
         INSTALL_DIR_EXISTS=true
     else
-        info "Removing existing installation..."
-        rm -rf "$INSTALL_DIR"
-        INSTALL_DIR_EXISTS=false
-        INSTALL_DIR=""
+        warn "JMRI $SELECTED_VERSION is already installed at $INSTALL_DIR"
+        read -p "Reinstall? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            info "Keeping existing installation"
+            INSTALL_DIR_EXISTS=true
+        else
+            info "Removing existing installation..."
+            rm -rf "$INSTALL_DIR"
+            INSTALL_DIR_EXISTS=false
+            INSTALL_DIR=""
+        fi
     fi
 else
     INSTALL_DIR_EXISTS=false
@@ -235,7 +264,11 @@ fi
 
 if [ "$INSTALL_DIR_EXISTS" = false ]; then
     # Download the .tgz file
-    TEMP_DIR=$(mktemp -d)
+    # Use /root for temp files instead of /tmp to avoid space issues on older Raspberry Pi's
+    # /tmp might be on a small partition, but /root is typically on the main filesystem
+    TEMP_BASE_DIR="/root/.jmri-install-tmp"
+    mkdir -p "$TEMP_BASE_DIR"
+    TEMP_DIR=$(mktemp -d -p "$TEMP_BASE_DIR")
     TEMP_TGZ="${TEMP_DIR}/${TGZ_FILENAME}.tgz"
     
     info "Downloading JMRI ${SELECTED_VERSION}..."
@@ -248,7 +281,7 @@ if [ "$INSTALL_DIR_EXISTS" = false ]; then
     
     info "Extracting JMRI..."
     # Extract to a temporary location first
-    TEMP_EXTRACT_DIR=$(mktemp -d)
+    TEMP_EXTRACT_DIR=$(mktemp -d -p "$TEMP_BASE_DIR")
     tar -xzf "$TEMP_TGZ" -C "$TEMP_EXTRACT_DIR" || error "Failed to extract JMRI"
     
     # The tar file contains a top-level "JMRI" directory
@@ -267,9 +300,11 @@ if [ "$INSTALL_DIR_EXISTS" = false ]; then
     mv "$EXTRACTED_JMRI_DIR" "$INSTALL_DIR" || error "Failed to move extracted directory to $INSTALL_DIR"
     
     # Clean up temp files and directories
-    rmdir "$TEMP_EXTRACT_DIR"
+    rm -rf "$TEMP_EXTRACT_DIR"
     rm -f "$TEMP_TGZ"
-    rmdir "$TEMP_DIR"
+    rm -rf "$TEMP_DIR"
+    # Clean up base temp directory if it's empty (may fail if not empty, which is fine)
+    rmdir "$TEMP_BASE_DIR" 2>/dev/null || true
     
     if [ ! -d "$INSTALL_DIR" ]; then
         error "Installation failed - directory $INSTALL_DIR not found after move"
@@ -339,9 +374,13 @@ if [ -n "$OLD_INSTALLS" ]; then
     echo ""
     info "Total disk space used by old installations: ~${TOTAL_SIZE_MB}MB"
     echo ""
-    read -p "Remove old JMRI installations to free up disk space? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [ "$INSTALL_LATEST" = true ]; then
+        # Skip cleanup prompt when using --latest
+        info "Skipping cleanup of old installations (use jmri-install manually to clean up)"
+    else
+        read -p "Remove old JMRI installations to free up disk space? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
         FREED_SPACE=0
         for old_dir in $OLD_INSTALLS; do
             if [ -d "$old_dir" ]; then
@@ -356,22 +395,29 @@ if [ -n "$OLD_INSTALLS" ]; then
                 fi
             fi
         done
-        FREED_MB=$((FREED_SPACE / 1024 / 1024))
-        info "Cleanup complete! Freed ~${FREED_MB}MB of disk space."
-    else
-        info "Old installations kept. You can remove them manually later if needed."
+            FREED_MB=$((FREED_SPACE / 1024 / 1024))
+            info "Cleanup complete! Freed ~${FREED_MB}MB of disk space."
+        else
+            info "Old installations kept. You can remove them manually later if needed."
+        fi
     fi
 fi
 
 # Check if dcc-io-daemon service exists and is running
 if systemctl list-unit-files | grep -q dcc-io-daemon.service; then
     if systemctl is-active dcc-io-daemon >/dev/null 2>&1; then
-        echo ""
-        read -p "Restart dcc-io-daemon service to use new JMRI? [Y/n] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            info "Restarting dcc-io-daemon service..."
+        if [ "$INSTALL_LATEST" = true ]; then
+            # Automatically restart when using --latest
+            info "Restarting dcc-io-daemon service to use new JMRI..."
             systemctl restart dcc-io-daemon || warn "Failed to restart service"
+        else
+            echo ""
+            read -p "Restart dcc-io-daemon service to use new JMRI? [Y/n] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                info "Restarting dcc-io-daemon service..."
+                systemctl restart dcc-io-daemon || warn "Failed to restart service"
+            fi
         fi
     else
         info "dcc-io-daemon service is not running. Start it with: sudo systemctl start dcc-io-daemon"

@@ -41,23 +41,35 @@ systemctl daemon-reload
 # Check if JMRI is installed
 if [ ! -L /opt/jmri/current ] && [ ! -d /opt/jmri/current ]; then
     echo ""
-    echo "WARNING: JMRI is not installed."
-    echo "Please run 'sudo jmri-install' to install JMRI before starting the service."
-    echo ""
+    echo "JMRI is not installed. Installing latest production release..."
+    if [ -x /usr/local/bin/jmri-install ]; then
+        /usr/local/bin/jmri-install --latest || {
+            echo ""
+            echo "WARNING: Failed to automatically install JMRI."
+            echo "Please run 'sudo jmri-install' manually to install JMRI before starting the service."
+            echo ""
+            exit 0
+        }
+    else
+        echo "WARNING: jmri-install script not found."
+        echo "Please run 'sudo jmri-install' to install JMRI before starting the service."
+        echo ""
+        exit 0
+    fi
+fi
+
+# Enable and start the service if JMRI is available
+if systemctl is-enabled dcc-io-daemon >/dev/null 2>&1; then
+    echo "Service already enabled."
 else
-    # Enable and start the service if JMRI is available
-    if systemctl is-enabled dcc-io-daemon >/dev/null 2>&1; then
-        echo "Service already enabled."
-    else
-        systemctl enable dcc-io-daemon
-    fi
-    
-    if systemctl is-active dcc-io-daemon >/dev/null 2>&1; then
-        echo "Service already running."
-    else
-        echo "Starting dcc-io-daemon service..."
-        systemctl start dcc-io-daemon || echo "Failed to start service. Check logs with: journalctl -u dcc-io-daemon"
-    fi
+    systemctl enable dcc-io-daemon
+fi
+
+if systemctl is-active dcc-io-daemon >/dev/null 2>&1; then
+    echo "Service already running."
+else
+    echo "Starting dcc-io-daemon service..."
+    systemctl start dcc-io-daemon || echo "Failed to start service. Check logs with: journalctl -u dcc-io-daemon"
 fi
 
 # DEBHELPER
