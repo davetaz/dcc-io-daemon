@@ -311,6 +311,23 @@ public final class DccIoServiceImpl implements DccIoService {
     public void removeConnection(String id) {
         CommandStationConnection conn = connections.remove(id);
         if (conn != null) {
+            // First, close and remove all throttles associated with this connection.
+            // This ensures JMRI throttle allocations are released when a connection
+            // is removed (e.g., device unplugged), so they don't hold locks or
+            // point at a dead connection when the controller returns.
+            throttles.entrySet().removeIf(entry -> {
+                ThrottleSession throttle = entry.getValue();
+                if (id.equals(throttle.getConnectionId())) {
+                    try {
+                        throttle.close();
+                    } catch (Exception ignore) {
+                        // ignore errors during cleanup
+                    }
+                    return true; // remove this throttle from the map
+                }
+                return false;
+            });
+
             try {
                 conn.close();
             } catch (Exception ignore) {
@@ -391,6 +408,24 @@ public final class DccIoServiceImpl implements DccIoService {
      * Get all active throttle sessions.
      */
     public Collection<ThrottleSession> getThrottles() {
+        // Clean up any throttles whose owning connection is no longer present
+        // or no longer connected. This prevents reusing "zombie" throttle
+        // sessions that still point at a dead JMRI connection when a controller
+        // is unplugged and later reconnected.
+        throttles.entrySet().removeIf(entry -> {
+            ThrottleSession throttle = entry.getValue();
+            CommandStationConnection conn = connections.get(throttle.getConnectionId());
+            if (conn == null || !conn.isConnected()) {
+                try {
+                    throttle.close();
+                } catch (Exception ignore) {
+                    // ignore errors during cleanup
+                }
+                return true; // remove stale throttle
+            }
+            return false;
+        });
+
         return Collections.unmodifiableCollection(throttles.values());
     }
     

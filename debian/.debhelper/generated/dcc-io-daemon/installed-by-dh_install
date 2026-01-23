@@ -1,3 +1,0 @@
-debian/tmp/usr/lib/dcc-io-daemon/dcc-io-daemon-0.2.0-jar-with-dependencies.jar
-debian/tmp/usr/local/bin/jmri-install
-debian/tmp/lib/systemd/system/dcc-io-daemon.service
