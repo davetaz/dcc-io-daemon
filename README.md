@@ -2,6 +2,16 @@
 
 A standalone Java daemon that provides a simple, clean API for controlling DCC command stations by leveraging JMRI's rich controller support without the complexity of JMRI's full object model and data structures.
 
+## License
+
+This project is licensed under the GNU General Public License version 2 (GPL v2). See [LICENSE.txt](LICENSE.txt) for details.
+
+This license is compatible with JMRI (which also uses GPL v2), allowing dcc-io-daemon to link with JMRI's libraries.
+
+## Acknowledgments
+
+DCC IO Daemon uses [JMRI](https://www.jmri.org/) (Java Model Railroad Interface) for controller communication. JMRI is free software licensed under GPL v2, developed by the JMRI community. See [LICENSE.txt](LICENSE.txt) for full acknowledgment details.
+
 ## Philosophy
 
 JMRI provides excellent support for a wide variety of DCC command stations through its `jmrix` layer, but using JMRI directly means dealing with its complex object model, data structures, and dependencies. This project bypasses all of that complexity by:
