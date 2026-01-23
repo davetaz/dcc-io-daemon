@@ -107,6 +107,10 @@ public class JmriThrottleSession implements ThrottleSession {
 
     @Override
     public void setSpeed(float speed) throws IOException {
+        // For XpressNet/Elite, the throttle may need to be "activated" before commands are accepted.
+        // If this is the first command and the throttle hasn't been activated by the physical controller,
+        // we may need to send an explicit activation. However, we'll try the normal command first.
+        // The delegate should handle XpressNet-specific activation if needed.
         delegate.setSpeedSetting(speed);
     }
 

@@ -320,8 +320,8 @@ public final class DccIoServiceImpl implements DccIoService {
                 if (id.equals(throttle.getConnectionId())) {
                     try {
                         throttle.close();
-                    } catch (Exception ignore) {
-                        // ignore errors during cleanup
+                    } catch (Exception e) {
+                        // Ignore errors during cleanup
                     }
                     return true; // remove this throttle from the map
                 }
@@ -418,8 +418,8 @@ public final class DccIoServiceImpl implements DccIoService {
             if (conn == null || !conn.isConnected()) {
                 try {
                     throttle.close();
-                } catch (Exception ignore) {
-                    // ignore errors during cleanup
+                } catch (Exception e) {
+                    // Ignore errors during cleanup
                 }
                 return true; // remove stale throttle
             }
@@ -437,8 +437,8 @@ public final class DccIoServiceImpl implements DccIoService {
         if (throttle != null) {
             try {
                 throttle.close();
-            } catch (Exception ignore) {
-                // ignore
+            } catch (Exception e) {
+                // Ignore errors during cleanup
             }
         }
     }

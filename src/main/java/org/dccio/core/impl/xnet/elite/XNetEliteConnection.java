@@ -11,6 +11,7 @@ import org.dccio.core.impl.common.BaseCommandStationConnection;
 import org.dccio.core.impl.common.JmriAccessoryController;
 import org.dccio.core.impl.common.JmriProgrammerSession;
 import org.dccio.core.impl.common.JmriThrottleSession;
+import org.dccio.core.impl.xnet.elite.DirectXNetThrottleSession;
 
 import jmri.DccThrottle;
 import jmri.GlobalProgrammerManager;
@@ -274,31 +275,85 @@ public final class XNetEliteConnection extends BaseCommandStationConnection {
         }
         final DccThrottle[] holder = new DccThrottle[1];
         final IOException[] error = new IOException[1];
+        final Object lock = new Object();
         ThrottleListener listener = new ThrottleListener() {
             @Override
             public void notifyThrottleFound(DccThrottle t) {
-                holder[0] = t;
+                synchronized (lock) {
+                    holder[0] = t;
+                    lock.notifyAll();
+                }
             }
 
             @Override
             public void notifyFailedThrottleRequest(jmri.LocoAddress address, String reason) {
-                error[0] = new IOException("Throttle request failed: " + reason);
+                synchronized (lock) {
+                    error[0] = new IOException("Throttle request failed: " + reason);
+                    lock.notifyAll();
+                }
             }
 
             @Override
-            public void notifyDecisionRequired(jmri.LocoAddress address, ThrottleListener.DecisionType question) {
-                // Default behavior: cancel the request if a decision is required
-                error[0] = new IOException("Throttle address " + address + " is in use, decision required: " + question);
+            public void notifyDecisionRequired(jmri.LocoAddress locoAddress, ThrottleListener.DecisionType question) {
+                // For XpressNet/Elite, if a decision is required, we'll fail
+                // The throttle needs to be activated by the physical controller first
+                synchronized (lock) {
+                    error[0] = new IOException("Throttle address " + locoAddress + " is in use, decision required: " + question + ". Please select this loco on the physical Elite controller first.");
+                    lock.notifyAll();
+                }
             }
         };
+        // Use steal=false - the throttle needs to be "activated" by the physical controller first
+        // Once activated, software can take control. This is an XpressNet/Elite quirk.
         tm.requestThrottle(address, longAddress, listener, false);
+        
+        // Wait for throttle acquisition (asynchronous operation)
+        synchronized (lock) {
+            try {
+                // Wait up to 5 seconds for throttle to be acquired
+                long timeout = 5000; // 5 seconds
+                long startTime = System.currentTimeMillis();
+                while (holder[0] == null && error[0] == null) {
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    long remaining = timeout - elapsed;
+                    if (remaining <= 0) {
+                        throw new IOException("Timeout waiting for throttle acquisition for address " + address);
+                    }
+                    lock.wait(remaining);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for throttle", e);
+            }
+        }
+        
         if (error[0] != null) {
             throw error[0];
         }
         if (holder[0] == null) {
             throw new IOException("Throttle not granted for address " + address);
         }
-        return new JmriThrottleSession(id, address, longAddress, holder[0], eventBus);
+        
+        // Bypass JMRI's throttle abstraction for speed/direction and send commands directly,
+        // matching the Python implementation which works reliably. Functions still use JMRI.
+        XNetTrafficController tc = memo.getXNetTrafficController();
+        if (tc == null) {
+            throw new IOException("XNetTrafficController not available on Elite connection");
+        }
+        
+        // Create direct throttle session that sends speed/direction commands like the Python code
+        DirectXNetThrottleSession throttle = new DirectXNetThrottleSession(id, address, longAddress, tc, eventBus, holder[0]);
+        
+        // Send initial throttle command to activate/initialize (speed 0, forward)
+        // This matches what the Python code does - just send the command directly
+        try {
+            throttle.setSpeed(0.0f);
+            throttle.setDirection(true);
+        } catch (Exception e) {
+            // Ignore initialization errors - throttle might still work
+        }
+        
+        return throttle;
     }
 
     @Override

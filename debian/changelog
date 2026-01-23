@@ -1,3 +1,10 @@
+dcc-io-daemon (0.2.3-1) unstable; urgency=medium
+
+  * Version 0.2.3
+
+ -- DCC IO Daemon Maintainer <maintainer@example.com>  Fri, 23 Jan 2026 10:25:35 -0500
+
+
 dcc-io-daemon (0.2.2-1) unstable; urgency=medium
 
   * Version 0.2.2

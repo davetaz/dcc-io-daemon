@@ -261,7 +261,8 @@ public class JsonThrottleHandler implements JsonMessageHandler.TypeHandler {
         }
         // Create new throttle
         try {
-            return service.openThrottle(null, address, longAddress);
+            String throttleId = service.openThrottle(null, address, longAddress);
+            return throttleId;
         } catch (IOException e) {
             throw new IllegalArgumentException("Failed to open throttle: " + e.getMessage(), e);
         }

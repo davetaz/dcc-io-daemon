@@ -26,6 +26,7 @@ Perfect for headless deployments on Raspberry Pi or other embedded systems where
 ## Supported Controllers
 
 - **Hornby Elite / XpressNet** (`xnet-elite`) - Serial/USB - Tested
+  - See [XNET_ELITE_IMPLEMENTATION.md](XNET_ELITE_IMPLEMENTATION.md) for details on the special implementation
 - **NCE PowerCab Serial** (`nce-serial`) - Serial/USB - Untested
 - **NCE PowerCab USB** (`nce-usb`) - USB - Untested
 - **DCC++ Ethernet** (`dccpp-ethernet`) - Network connection - Untested
